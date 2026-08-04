@@ -50,6 +50,14 @@ describe("JobStore", () => {
     expect(store.getJob(id)?.config.durationSec).toBe(30);
   });
 
+  test("updateJob can clear error back to null", () => {
+    const id = store.createJob(cfg);
+    store.updateJob(id, { error: "boom" });
+    expect(store.getJob(id)?.error).toBe("boom");
+    store.updateJob(id, { error: null });
+    expect(store.getJob(id)?.error).toBeNull();
+  });
+
   test("rerunFrom deletes downstream outputs and requeues", () => {
     const id = store.createJob(cfg);
     store.beginStep(id, 0); store.finishStep(id, 0, { step: 0, status: "passed", artifacts: [], data: {}, log: "a", attempts: 1 });

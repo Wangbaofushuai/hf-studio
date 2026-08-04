@@ -76,9 +76,12 @@ export class JobStore {
   updateJob(jobId: string, patch: Partial<Pick<JobRow, "status" | "currentStep" | "error" | "config">>): void {
     const job = this.getJob(jobId);
     if (!job) return;
+    // 显式传入的键（含 null）优先：error/currentStep 需要能被清空，不能用 ?? 兜底
     this.db.run(
       "UPDATE jobs SET status = ?, current_step = ?, error = ?, config = ?, updated_at = ? WHERE id = ?",
-      [patch.status ?? job.status, patch.currentStep ?? job.currentStep, patch.error ?? job.error,
+      [patch.status ?? job.status,
+       "currentStep" in patch ? patch.currentStep : job.currentStep,
+       "error" in patch ? patch.error : job.error,
        JSON.stringify(patch.config ?? job.config), new Date().toISOString(), jobId],
     );
   }
