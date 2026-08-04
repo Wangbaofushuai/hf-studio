@@ -1,0 +1,19 @@
+{
+  "providers": [
+    {
+      "id": "deepseek",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-REPLACE_ME",
+      "models": ["deepseek-chat"]
+    }
+  ],
+  "defaults": {
+    "model": "deepseek/deepseek-chat",
+    "judgeModel": "deepseek/deepseek-chat",
+    "judgeThreshold": 7
+  },
+  "tts": {
+    "defaultVoice": "zh-CN-XiaoxiaoNeural",
+    "defaultLanguage": "zh-CN"
+  }
+}
