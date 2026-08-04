@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mkdtempSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, existsSync, readdirSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RenderService, RESOLUTIONS } from "../src/render/service";
@@ -37,5 +37,21 @@ describe("RenderService", () => {
     const pngs = await svc.snapshot([1.5, 4.2]);
     expect(pngs.length).toBe(2);
     for (const p of pngs) expect(existsSync(p)).toBe(true);
+
+    // 第二次调用（不同时间点）只返回本次捕获，不混入上次遗留的旧 PNG
+    const pngs2 = await svc.snapshot([2.0, 6.5]);
+    expect(pngs2.length).toBe(2);
+    for (const p of pngs2) expect(existsSync(p)).toBe(true);
+    expect(pngs2.filter((p) => pngs.includes(p))).toEqual([]);
   }, 180000);
+
+  test("snapshot throws on CLI failure even if snapshots dir exists", async () => {
+    // 预置 snapshots/ 与旧 PNG（模拟上次运行残留），CLI 失败时必须抛错而不是返回旧文件
+    mkdirSync(join(dir, "snapshots"), { recursive: true });
+    writeFileSync(join(dir, "snapshots", "stale.png"), "fake");
+    const fakeBin = join(dir, "fake-hyperframes");
+    writeFileSync(fakeBin, "#!/bin/sh\necho \"boom\" >&2\nexit 3\n", { mode: 0o755 });
+    const failing = new RenderService(dir, fakeBin);
+    await expect(failing.snapshot([1.0])).rejects.toThrow(/snapshot failed/);
+  }, 30000);
 });

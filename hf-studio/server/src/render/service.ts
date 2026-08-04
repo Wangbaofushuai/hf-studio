@@ -1,7 +1,7 @@
 // server/src/render/service.ts —— hyperframes CLI 封装 + 项目脚手架生成（Task 2）
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { JobConfig } from "../types";
 import { RESOLUTIONS } from "./resolutions";
@@ -163,8 +163,11 @@ export class RenderService {
 
   async snapshot(at: number[]): Promise<string[]> {
     // --no-end：默认会追加一帧片尾帧，导致 PNG 数量多 1；测试期望只取 --at 指定时间点
-    const r = await this.exec(["snapshot", ".", "--at", at.join(","), "--no-end"], { timeoutMs: 10 * 60 * 1000 });
+    // 运行前清空 snapshots/，保证返回值只反映本次捕获（CLI 失败时也不会返回上次残留的旧 PNG）
     const snapDir = join(this.projectDir, "snapshots");
+    rmSync(snapDir, { recursive: true, force: true });
+    const r = await this.exec(["snapshot", ".", "--at", at.join(","), "--no-end"], { timeoutMs: 10 * 60 * 1000 });
+    if (r.code !== 0) throw new Error(`snapshot failed (code ${r.code}): ${r.stderr || r.stdout}`);
     if (!existsSync(snapDir)) throw new Error(`snapshot failed: ${r.stderr || r.stdout}`);
     return readdirSync(snapDir)
       .filter((f) => f.endsWith(".png"))
