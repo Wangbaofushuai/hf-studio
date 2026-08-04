@@ -109,6 +109,18 @@ describe("LlmGateway", () => {
     expect(seen).toEqual({ type: "disabled" });
   });
 
+  test("per-call reasoningEffort is forwarded to the request body", async () => {
+    let seen: unknown;
+    const gw = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body) => {
+        seen = body.reasoning_effort;
+        return { content: "ok" };
+      }),
+    });
+    await gw.chat({ model: "fake/model-a", messages: [], reasoningEffort: "low" });
+    expect(seen).toBe("low");
+  });
+
   test("unknown provider throws", async () => {
     const gw = new LlmGateway(mockProviders, { transport: mockTransport(async () => ({ content: "" })) });
     expect(gw.chat({ model: "nope/m", messages: [] })).rejects.toThrow(/unknown provider/);

@@ -5,7 +5,7 @@ import type { LlmProvider } from "../types";
 export { LlmApiError } from "./errors"; // 再导出，测试与调用方统一从 gateway 入口引用
 export type { LlmProvider } from "../types"; // 从共享类型再导出，避免循环依赖
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
-export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number; timeoutMs?: number; thinking?: "enabled" | "disabled" }
+export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number; timeoutMs?: number; thinking?: "enabled" | "disabled"; reasoningEffort?: "low" | "medium" | "high" }
 export interface ChatResult { content: string; promptTokens: number; completionTokens: number }
 export type Transport = (provider: LlmProvider, body: Record<string, unknown>, timeoutMs?: number) => Promise<ChatResult>;
 
@@ -67,6 +67,8 @@ export class LlmGateway {
     // 例如 step4/step5 的 HTML 生成要求严格遵守 composition 契约，强制 thinking:"enabled"
     const thinking = params.thinking ?? provider.thinking;
     if (thinking === "disabled") body.thinking = { type: "disabled" };
+    // 低档思考：保留契约遵守能力、大幅缩短生成时长（deepseek-v4-flash 实测 10-25 分钟 → 30 秒级）
+    if (params.reasoningEffort) body.reasoning_effort = params.reasoningEffort;
     if (params.seed !== undefined) body.seed = params.seed;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
     const transport = this.opts.transport ?? this.defaultTransport.bind(this);

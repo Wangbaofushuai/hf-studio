@@ -79,11 +79,11 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         ],
         temperature: 0.5,
         seed: 44,
-        // beat 生成是流水线中最长的输出（完整 HTML 合成），且推理模型先思考后输出，
-        // 生成时长实测波动 2-25 分钟 → 给足 15 分钟预算（E2E 实测 420s 曾超时）
+        // beat 生成是流水线中最长的输出（完整 HTML 合成）。强制开启思考保证契约遵守，
+        // 但用低档思考：deepseek-v4-flash 实测全量思考 10-25 分钟/beat，low 档 30 秒级
         timeoutMs: 900_000,
-        // 强制开启思考：无思考模式下模型多次无法遵守 composition 契约（E2E 实测 lint 3 次全败）
         thinking: "enabled",
+        reasoningEffort: "low",
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，
