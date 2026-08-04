@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { step3Tts } from "../src/pipeline/steps/step3-tts";
+import { step3Tts, estimateSec } from "../src/pipeline/steps/step3-tts";
 import type { StepContext, JobConfig, StepOutput } from "../src/types";
 
 const cfg: JobConfig = {
@@ -25,6 +25,15 @@ const fakeWav = (() => {
 })();
 
 describe("step3Tts", () => {
+  test("estimateSec converts narration length by speech rate", () => {
+    expect(estimateSec("你好世界", "zh-CN")).toBeCloseTo(1.0, 5);       // 4 字 / 4 字每秒
+    expect(estimateSec("Hello world", "en-US")).toBeCloseTo(11 / 13, 5); // 11 字符 / 13 每秒
+    expect(estimateSec("", "zh-CN")).toBe(0.5);                          // 空文本下限
+    expect(estimateSec("テスト", "ja-JP")).toBeCloseTo(3 / 5, 5);
+    expect(estimateSec("abcdefgh", "fr-FR")).toBeCloseTo(1.0, 5);           // 未收录语言用默认语速 8
+    expect(estimateSec("ab", "fr-FR")).toBe(0.5);                           // 低于 0.5s 时取下限兜底
+  });
+
   test("voiceover: synthesizes per beat, concatenates, writes transcript.json", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hf-step3-"));
     const prev: StepOutput[] = [
@@ -33,8 +42,9 @@ describe("step3Tts", () => {
       {
         step: 2, status: "passed", artifacts: [], data: {
           storyboard: { beats: [
-            { index: 1, id: "beat-1", title: "a", narration: "第一句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 0.9 },
-            { index: 2, id: "beat-2", title: "b", narration: "第二句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 1.1 },
+            // 旁白共 8 字（zh 语速 4 字/秒 → 估算 2.0s），与假 TTS 音频 2.0s 一致，过 30% 门
+            { index: 1, id: "beat-1", title: "a", narration: "第一句话", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 0.9 },
+            { index: 2, id: "beat-2", title: "b", narration: "第二句话", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 1.1 },
           ] },
         }, log: "", attempts: 1,
       },
@@ -44,9 +54,9 @@ describe("step3Tts", () => {
         // 假合成：写一个最小合法 wav（16-bit 单声道 PCM 24kHz，20ms 静音，
         // ffmpeg concat -c copy 可解析拼接）+ 返回固定时间戳
         (await import("node:fs")).writeFileSync(outWav, fakeWav);
-        return text === "第一句"
-          ? { words: [{ text: "第一", start: 0, end: 0.6 }, { text: "句", start: 0.6, end: 0.9 }], durationSec: 0.9 }
-          : { words: [{ text: "第二", start: 0, end: 0.7 }, { text: "句", start: 0.7, end: 1.1 }], durationSec: 1.1 };
+        return text === "第一句话"
+          ? { words: [{ text: "第一", start: 0, end: 0.6 }, { text: "句话", start: 0.6, end: 0.9 }], durationSec: 0.9 }
+          : { words: [{ text: "第二", start: 0, end: 0.7 }, { text: "句话", start: 0.7, end: 1.1 }], durationSec: 1.1 };
       },
     };
     const ctx = {
@@ -71,19 +81,20 @@ describe("step3Tts", () => {
       {
         step: 2, status: "passed", artifacts: [], data: {
           storyboard: { beats: [
-            { index: 1, id: "beat-1", title: "a", narration: "第一句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
-            { index: 2, id: "beat-2", title: "b", narration: "第二句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
+            // 旁白共 18 字（zh 语速 4 字/秒 → 估算 4.5s），假 TTS 音频 2.0s，偏差 55.6% > 30%
+            { index: 1, id: "beat-1", title: "a", narration: "第一句话测试配音内容", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
+            { index: 2, id: "beat-2", title: "b", narration: "第二句话测试配音内容", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
           ] },
         }, log: "", attempts: 1,
       },
     ];
     const tts = {
       synthesizeToWav: async (text: string, _voice: string, outWav: string) => {
-        // 假合成：写一个最小合法 wav + 返回固定时间戳（合计 2.0s，与估算 10s 偏差 80%）
+        // 假合成：写一个最小合法 wav + 返回固定时间戳（合计 2.0s，与字数估算 4.5s 偏差 55.6%）
         (await import("node:fs")).writeFileSync(outWav, fakeWav);
-        return text === "第一句"
-          ? { words: [{ text: "第一", start: 0, end: 0.6 }, { text: "句", start: 0.6, end: 0.9 }], durationSec: 0.9 }
-          : { words: [{ text: "第二", start: 0, end: 0.7 }, { text: "句", start: 0.7, end: 1.1 }], durationSec: 1.1 };
+        return text === "第一句话测试配音内容"
+          ? { words: [{ text: "第一", start: 0, end: 0.6 }, { text: "句话", start: 0.6, end: 0.9 }], durationSec: 0.9 }
+          : { words: [{ text: "第二", start: 0, end: 0.7 }, { text: "句话", start: 0.7, end: 1.1 }], durationSec: 1.1 };
       },
     };
     const ctx = {

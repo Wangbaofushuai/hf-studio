@@ -4,6 +4,16 @@ import { join } from "node:path";
 import type { StepContext, StepFn, StepResult, Beat } from "../../types";
 import { buildBeatBoundaries, flattenTranscript } from "../beat-timing";
 
+// 语速表：字符/秒（按旁白语言取，用于把旁白字数换算成预计配音时长）
+const SPEECH_RATE: Record<string, number> = { zh: 4, ja: 5, en: 13 };
+const DEFAULT_RATE = 8;
+
+export function estimateSec(narration: string, language: string): number {
+  const langKey = Object.keys(SPEECH_RATE).find((k) => language.toLowerCase().startsWith(k)) ?? "";
+  const rate = SPEECH_RATE[langKey] ?? DEFAULT_RATE;
+  return Math.max(narration.trim().length / rate, 0.5);
+}
+
 export const step3Tts: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
   const beats = (prev[2]?.data.storyboard as { beats: Beat[] } | undefined)?.beats ?? [];
   if (!ctx.config.voiceover) {
@@ -19,7 +29,8 @@ export const step3Tts: StepFn = async (ctx: StepContext, prev): Promise<StepResu
   mkdirSync(join(ctx.projectDir, "assets"), { recursive: true });
   const wordsPerBeat: { words: { text: string; start: number; end: number }[] }[] = [];
   const beatWavs: string[] = [];
-  const totalEstimate = beats.reduce((s, b) => s + b.durationSec, 0);
+  // 确定性时长估算：旁白字数 ÷ 语速（不依赖 LLM 的 durationSec 拍脑袋值）
+  const totalEstimate = beats.reduce((s, b) => s + estimateSec(b.narration, ctx.config.language), 0);
 
   for (const beat of beats) {
     const wav = join(ctx.projectDir, "assets", `narration-beat-${beat.index}.wav`);
