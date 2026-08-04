@@ -29,6 +29,17 @@ window.__timelines["${id}"] = tl;
 </template></body></html>`;
 
 function makeCtx(lintErrorCount: number): { ctx: StepContext; prev: StepOutput[]; lintCalls: () => number } {
+  return makeCtxWithLint(async () => ({
+    errorCount: lintErrorCount,
+    findings: lintErrorCount > 0 ? [{ rule: "test_rule", message: "bad html", severity: "error" }] : [],
+  }));
+}
+
+/** 灵活版 makeCtx：lint mock 可自定义（模拟真实 CLI 的 missing_or_empty_sub_composition 等） */
+function makeCtxWithLint(lint: () => Promise<{
+  ok?: boolean; errorCount?: number;
+  findings: { rule?: string; code?: string; message: string; severity: string }[];
+}>): { ctx: StepContext; prev: StepOutput[]; lintCalls: () => number } {
   const llm = new LlmGateway(mockProviders, {
     transport: mockTransport(async (_p, body) => {
       const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
@@ -41,10 +52,7 @@ function makeCtx(lintErrorCount: number): { ctx: StepContext; prev: StepOutput[]
   writeFileSync(join(dir, "DESIGN.md"), "# DESIGN\n## Visual Theme\n暗色\n## Quick Reference\n#000 #fff\n## Component Stylings\n标题 80px\n## Spacing & Layout\n网格\n## Iteration Guide\n克制");
   let lintCalls = 0;
   const render = {
-    lint: async () => {
-      lintCalls++;
-      return { errorCount: lintErrorCount, findings: lintErrorCount > 0 ? [{ rule: "test_rule", message: "bad html", severity: "error" }] : [] };
-    },
+    lint: async () => { lintCalls++; return lint(); },
   };
   const prev: StepOutput[] = [
     { step: 0, status: "passed", artifacts: [], data: {}, log: "", attempts: 1 },
@@ -85,5 +93,59 @@ describe("step4Build", () => {
     const r = await step4Build(ctx, prev);
     expect(r.status).toBe("gate_failed");
     expect(r.gateErrors?.join("; ")).toContain("bad html");
+  });
+
+  test("missing referenced-file lint findings do not fail the per-beat attempt", async () => {
+    // 模拟真实 CLI：index.html 先引用全部 beat，逐 beat 写入时尚未写入的合成
+    // 产生 missing_or_empty_sub_composition（message 含 "does not exist"）。这类
+    // finding 在逐 beat 阶段必须被过滤；全部写完后最终 lint 无错误 → 通过。
+    let calls = 0;
+    const { ctx, prev, lintCalls } = makeCtxWithLint(async () => {
+      calls++;
+      const missing = ["beat-1", "beat-2"].slice(calls); // 第 1 次: beat-2 缺失; 第 2 次起: 无
+      return {
+        ok: missing.length === 0,
+        errorCount: missing.length,
+        findings: missing.map((id) => ({
+          code: "missing_or_empty_sub_composition",
+          message: `data-composition-src references "compositions/${id}.html", but the file does not exist.`,
+          severity: "error",
+        })),
+      };
+    });
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("passed");
+    expect(r.data.beats).toHaveLength(2);
+    expect(lintCalls()).toBe(3); // 2 次逐 beat + 1 次最终完整 lint
+    expect(existsSync(join((ctx as any).projectDir, "compositions/beat-2.html"))).toBe(true);
+  });
+
+  test("final full lint failure after all beats written returns gate_failed", async () => {
+    let calls = 0;
+    const { ctx, prev } = makeCtxWithLint(async () => {
+      calls++;
+      if (calls <= 2) {
+        const missing = ["beat-1", "beat-2"].slice(calls);
+        return {
+          ok: missing.length === 0,
+          errorCount: missing.length,
+          findings: missing.map((id) => ({
+            code: "missing_or_empty_sub_composition",
+            message: `data-composition-src references "compositions/${id}.html", but the file does not exist.`,
+            severity: "error",
+          })),
+        };
+      }
+      // 最终完整 lint：真实错误（不是缺失引用）→ 必须 gate_failed
+      return {
+        ok: false,
+        errorCount: 1,
+        findings: [{ rule: "test_rule", code: "real_error", message: "final bad html", severity: "error" }],
+      };
+    });
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("gate_failed");
+    expect(r.gateErrors?.join("; ")).toContain("final bad html");
+    expect(r.data.beats).toHaveLength(2); // 两个 beat 都已写入
   });
 });

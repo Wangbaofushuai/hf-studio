@@ -9,7 +9,7 @@ export { RESOLUTIONS };
 
 const execFileP = promisify(execFile);
 export interface CliResult { stdout: string; stderr: string; code: number }
-export interface LintFinding { rule: string; message: string; severity: "error" | "warning" | "info"; file?: string }
+export interface LintFinding { rule: string; message: string; severity: "error" | "warning" | "info"; file?: string; code?: string }
 
 const BLANK_META = (name: string, createdAt: string) =>
   JSON.stringify({ id: name, name, createdAt }, null, 2);
@@ -148,7 +148,7 @@ export class RenderService {
     const parsed = JSON.parse(r.stdout) as {
       ok?: boolean;
       errorCount: number;
-      findings: { rule: string; message: string; severity: string; file?: string }[];
+      findings: { rule?: string; code?: string; message: string; severity: string; file?: string }[];
     };
     return {
       // 真实 CLI 在"无合成"等场景会报 ok:false 且 errorCount:0，因此 ok 必须透传；
@@ -156,7 +156,9 @@ export class RenderService {
       ok: parsed.ok ?? (parsed.errorCount === 0),
       errorCount: parsed.errorCount,
       findings: (parsed.findings ?? []).map((f) => ({
-        rule: f.rule,
+        // 真实 CLI 的 finding 用 `code`（如 missing_or_empty_sub_composition），无 `rule` 字段
+        rule: f.rule ?? "",
+        code: f.code,
         message: f.message,
         severity: f.severity as LintFinding["severity"],
         file: f.file,
