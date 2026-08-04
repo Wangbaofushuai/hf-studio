@@ -90,4 +90,15 @@ describe("API", () => {
     const body = (await res.json()) as { voices: { shortName: string }[] };
     expect(body.voices[0].shortName).toContain("Xiaoxiao");
   });
+
+  test("POST /api/jobs/:id/rerun with model override replaces default model", async () => {
+    const { jobs } = (await (await server.fetch(new Request(`${base}/api/jobs`))).json()) as { jobs: { id: string; config: { models: { default: string } } }[] };
+    const res = await server.fetch(new Request(`${base}/api/jobs/${jobs[0].id}/rerun`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: 0, model: "fake/model-b" }),
+    }));
+    expect(res.status).toBe(202);
+    expect(store.getJob(jobs[0].id)?.config.models.default).toBe("fake/model-b");
+  });
 });
