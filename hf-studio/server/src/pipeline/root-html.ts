@@ -15,9 +15,14 @@ export function generateRootHtml(opts: {
   const fmt = (n: number) => String(Number(n.toFixed(2))); // 去掉尾随 0：4.20 → 4.2
   const slots = opts.beats
     .map((b) => {
-      const dur = fmt(b.endSec - b.startSec);
+      // 时长必须从舍入后的 start/end 推导，保证相邻槽位严格邻接：
+      // 独立舍入 start 与 duration 会错位（如 end=5.964 → start 5.96 而 duration 3.89 → 结束 5.97），
+      // lint 报 overlapping_clips_same_track（10ms 浮点重叠）——E2E 实测踩中
+      const startStr = fmt(b.startSec);
+      const endStr = fmt(b.endSec);
+      const dur = fmt(Number(endStr) - Number(startStr));
       // id 供 Studio 做稳定编辑目标（官方示例 slot 均带 id，缺了会触发 CLI warning）
-      return `      <div id="${b.id}-slot" data-composition-id="${b.id}" data-composition-src="compositions/${b.id}.html" data-start="${fmt(b.startSec)}" data-duration="${dur}" data-track-index="0" data-width="${w}" data-height="${h}"></div>`;
+      return `      <div id="${b.id}-slot" data-composition-id="${b.id}" data-composition-src="compositions/${b.id}.html" data-start="${startStr}" data-duration="${dur}" data-track-index="0" data-width="${w}" data-height="${h}"></div>`;
     })
     .join("\n");
   const narration = opts.voiceover
