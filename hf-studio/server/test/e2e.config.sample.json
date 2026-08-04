@@ -1,0 +1,20 @@
+{
+  "_note": "e2e 冒烟样例配置（说明文件，不会被加载）。把本文件内容复制到 server/config.json（gitignored，不提交），并将 apiKey 替换为真实密钥后运行：cd hf-studio/server && bun run e2e",
+  "providers": [
+    {
+      "id": "deepseek",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKey": "sk-在此填写你的真实密钥",
+      "models": ["deepseek-chat"]
+    }
+  ],
+  "defaults": {
+    "model": "deepseek/deepseek-chat",
+    "judgeModel": "deepseek/deepseek-chat",
+    "judgeThreshold": 7
+  },
+  "tts": {
+    "defaultVoice": "zh-CN-XiaoxiaoNeural",
+    "defaultLanguage": "zh-CN"
+  }
+}
