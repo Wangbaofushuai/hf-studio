@@ -1,10 +1,12 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
 
-interface CheckFinding { file?: string; message?: string; rule?: string }
+// 真实 CLI（hyperframes check --json）的 finding 字段是 sourceFile（code/severity/time/
+// selector/sourceFile/message/fixHint），无 `file` 字段；测试桩可能用 `file`，两者都兼容。
+interface CheckFinding { file?: string; sourceFile?: string; message?: string; rule?: string; code?: string }
 
 export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
   // 引擎注入 `_model`（每步可覆盖）；直接调用（测试）时回退到 config 默认模型
@@ -25,16 +27,18 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
   while (!check.ok && repairRounds < 2) {
     repairRounds++;
     const findings = extractFindings(check.summary);
-    // 按文件分组
+    // 按文件分组（真实 CLI 用 sourceFile；兼容测试桩的 file）
     const byFile = new Map<string, CheckFinding[]>();
     for (const f of findings) {
-      const file = f.file ?? "compositions";
+      const file = f.sourceFile ?? f.file;
+      if (!file) continue; // 无文件信息的 finding 无法定位修复目标，跳过
       if (!byFile.has(file)) byFile.set(file, []);
       byFile.get(file)!.push(f);
     }
     for (const [file, list] of byFile) {
       const abs = join(ctx.projectDir, file);
-      if (!existsSync(abs)) continue;
+      // sourceFile 可能指向目录（如 "compositions"）或已不存在的文件：只修复真实存在的普通文件
+      if (!statSync(abs, { throwIfNoEntry: false })?.isFile()) continue;
       const content = readFileSync(abs, "utf8");
       const { content: fixed } = await ctx.llm.chat({
         model,
@@ -84,5 +88,3 @@ function extractFindings(summary: Record<string, unknown>): CheckFinding[] {
   }
   return out;
 }
-
-import { existsSync } from "node:fs";

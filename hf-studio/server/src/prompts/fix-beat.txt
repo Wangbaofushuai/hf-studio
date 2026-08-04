@@ -2,3 +2,6 @@
 以及该片段当前文件内容。请修复所有问题，只输出修复后的完整 HTML 文件内容，不要任何其他文字。
 要求：保持原有视觉设计与动画意图不变；只修复 finding 指出的问题；
 遵守 HyperFrames 合成契约（template 包裹、#root 样式、唯一 id、fromTo 动画、确定性规则）。
+
+findings 字段说明：每条 finding 的 `message` 描述问题，`code`/`rule` 是问题类型，
+`sourceFile`（部分旧格式为 `file`）指明问题所在文件；只修复 sourceFile/file 指向的当前文件。
