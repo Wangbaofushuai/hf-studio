@@ -1,9 +1,9 @@
 // server/src/types.ts —— 全部类型（Task 1 创建，后续任务只 import）
-import type { LlmGateway } from "../llm/gateway";
-import type { Judge } from "../judge/judge";
-import type { JobStore } from "../db/store";
-import type { RenderService } from "../render/service";
-import type { TtsService } from "../tts/service";
+import type { LlmGateway } from "./llm/gateway";
+import type { Judge } from "./judge/judge";
+import type { JobStore } from "./db/store";
+import type { RenderService } from "./render/service";
+import type { TtsService } from "./tts/service";
 
 export type StepId = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type JobStatus = "queued" | "running" | "failed" | "needs_review" | "completed";
