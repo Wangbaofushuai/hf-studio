@@ -56,7 +56,7 @@ export interface Beat {
 export interface JudgeResult { score: number; rubric: Record<string, number>; feedback: string; }
 
 export interface StepResult {
-  status: "passed" | "gate_failed" | "judge_failed";
+  status: "passed" | "gate_failed" | "judge_failed" | "failed";  // 硬失败（如 LLM 重试耗尽）由引擎置为 "failed"
   artifacts: string[];                            // 项目相对路径
   data: Record<string, unknown>;
   log: string;                                    // 给 UI 的摘要
