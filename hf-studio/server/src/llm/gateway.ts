@@ -26,9 +26,9 @@ export class LlmGateway {
 
   private async defaultTransport(provider: LlmProvider, body: Record<string, unknown>, timeoutMs?: number): Promise<ChatResult> {
     const controller = new AbortController();
-    // 默认 300s：推理模型（如 deepseek-v4-flash）先思考后输出，长 HTML 生成可超 120s；
-    // 调用方可传 timeoutMs 覆盖（step4 的 beat 生成传更长超时）
-    const t = timeoutMs ?? this.opts.timeoutMs ?? 300_000;
+    // 默认 600s：推理模型（如 deepseek-v4-flash）先思考后输出，长 HTML 生成实测可达 20+ 分钟；
+    // 调用方可传 timeoutMs 覆盖（step4 的 beat 生成传 15 分钟）
+    const t = timeoutMs ?? this.opts.timeoutMs ?? 600_000;
     const timer = setTimeout(() => controller.abort(), t);
     try {
       const res = await fetch(`${provider.baseURL.replace(/\/$/, "")}/chat/completions`, {
