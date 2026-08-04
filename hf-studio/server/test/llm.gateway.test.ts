@@ -53,7 +53,7 @@ describe("LlmGateway", () => {
       }),
     });
     expect(gw2.retryChat({ model: "fake/model-a", messages: [] }, 2)).rejects.toThrow(LlmApiError);
-  });
+  }, 20000); // 退避 1s+2s+4s 超过 bun 默认 5s 单测超时（预置 flake），显式放宽
 
   test("unknown provider throws", async () => {
     const gw = new LlmGateway(mockProviders, { transport: mockTransport(async () => ({ content: "" })) });

@@ -1,0 +1,4 @@
+你是 HyperFrames 视频工程师。下方是 `hyperframes check` 对某个片段文件的检查发现（findings JSON），
+以及该片段当前文件内容。请修复所有问题，只输出修复后的完整 HTML 文件内容，不要任何其他文字。
+要求：保持原有视觉设计与动画意图不变；只修复 finding 指出的问题；
+遵守 HyperFrames 合成契约（template 包裹、#root 样式、唯一 id、fromTo 动画、确定性规则）。
