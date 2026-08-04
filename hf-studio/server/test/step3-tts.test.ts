@@ -27,11 +27,14 @@ const fakeWav = (() => {
 describe("step3Tts", () => {
   test("estimateSec converts narration length by speech rate", () => {
     expect(estimateSec("你好世界", "zh-CN")).toBeCloseTo(1.0, 5);       // 4 字 / 4 字每秒
-    expect(estimateSec("Hello world", "en-US")).toBeCloseTo(11 / 13, 5); // 11 字符 / 13 每秒
+    expect(estimateSec("Hello world", "en-US")).toBeCloseTo(10 / 13, 5); // 10 字母（空格不计）/ 13 每秒
     expect(estimateSec("", "zh-CN")).toBe(0.5);                          // 空文本下限
     expect(estimateSec("テスト", "ja-JP")).toBeCloseTo(3 / 5, 5);
     expect(estimateSec("abcdefgh", "fr-FR")).toBeCloseTo(1.0, 5);           // 未收录语言用默认语速 8
     expect(estimateSec("ab", "fr-FR")).toBe(0.5);                           // 低于 0.5s 时取下限兜底
+    // 标点不计入字数：60 字符含 14 标点 → 按 46 字估算（防旁白门被标点骗过）
+    expect(estimateSec("太阳，是地球最慷慨的能量来源。光伏效应，让光直接变成电。光子激发电子，形成电流。", "zh-CN"))
+      .toBeCloseTo(46 / 4, 5);
   });
 
   test("voiceover: synthesizes per beat, concatenates, writes transcript.json", async () => {

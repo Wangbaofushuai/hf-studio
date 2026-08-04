@@ -4,11 +4,14 @@ export interface Boundary { index: number; startSec: number; endSec: number }
 const SPEECH_RATE: Record<string, number> = { zh: 4, ja: 5, en: 13 };
 const DEFAULT_RATE = 8;
 
-/** 旁白时长估算：字数 ÷ 语速（确定性，不依赖 LLM 的 durationSec 拍脑袋值） */
+/** 旁白时长估算：纯文字数（剔除标点/空白）÷ 语速（确定性，不依赖 LLM 的 durationSec 拍脑袋值） */
 export function estimateSec(narration: string, language: string): number {
   const langKey = Object.keys(SPEECH_RATE).find((k) => language.toLowerCase().startsWith(k)) ?? "";
   const rate = SPEECH_RATE[langKey] ?? DEFAULT_RATE;
-  return Math.max(narration.trim().length / rate, 0.5);
+  // 只数文字与数字：标点不算字数（否则旁白门会被"60 字符含 14 个标点 → 估算 15s"骗过，
+  // 真实旁白只有 46 字 → 视频 10.3s vs 目标 15s——E2E 实测）
+  const letters = narration.replace(/[^\p{L}\p{N}]/gu, "").length;
+  return Math.max(letters / rate, 0.5);
 }
 
 export function buildBeatBoundaries(
