@@ -4,7 +4,8 @@
       "id": "deepseek",
       "baseURL": "https://api.deepseek.com/v1",
       "apiKey": "sk-REPLACE_ME",
-      "models": ["deepseek-chat"]
+      "models": ["deepseek-chat"],
+      "thinking": "disabled"
     }
   ],
   "defaults": {
