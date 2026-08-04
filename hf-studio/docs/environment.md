@@ -1,0 +1,5 @@
+# Environment (2026-08-04)
+- Node v24.19.0, bun 1.3.14, Python 3.13.5, Docker 29.7.1 (running)
+- FFmpeg + FFprobe: installed via apt (approved by user)
+- Chrome Headless Shell: installed via `hyperframes browser ensure` (user cache)
+- hyperframes CLI: ^0.7.90 (npm)
