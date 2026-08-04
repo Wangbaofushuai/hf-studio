@@ -61,9 +61,17 @@ export class PipelineEngine {
   }
 
   private async drain(): Promise<void> {
-    const jobs = this.opts.store.listJobs(100).filter((j) => j.status === "queued");
-    for (const job of jobs) {
-      await this.runJob(job.id);
+    // 每轮快照跑完后重扫：drain 进行期间新入队的任务（并发 POST、运行中的 rerunFrom）
+    // 不能被漏掉，否则会一直卡在 queued 直到下一次 enqueue。单飞语义不变——
+    // busy 期间的 enqueue/rerunFrom 仍 join 在途 drain，由本循环兜底拾取。
+    // 终止性：runJob 结束时任务必为 completed/failed/needs_review（不再 queued），
+    // queued 只能由 createJob/rerunFrom 重新产生（调用方行为），不会自转死循环。
+    for (;;) {
+      const jobs = this.opts.store.listJobs(100).filter((j) => j.status === "queued");
+      if (jobs.length === 0) return;
+      for (const job of jobs) {
+        await this.runJob(job.id);
+      }
     }
   }
 

@@ -108,4 +108,39 @@ describe("PipelineEngine", () => {
     expect(calls[0]).toBe(`init:${join(dir, jobId)}`);
     expect(calls[1]).toBe(`step0:${jobId}`);
   });
+
+  test("drain re-scans: mid-drain rerun is picked up by the in-flight drain", async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    let slowId = ""; // 先声明：慢任务 id 在首轮 drain 之后才生成，步骤闭包需提前可见
+    const gate = new Promise<void>((r) => { release = r; });
+    const steps: StepFn[] = [
+      async (ctx) => {
+        order.push(`s0:${ctx.jobId}`);
+        if (ctx.jobId === slowId) await gate; // 慢任务：阻塞在 step0，模拟长时间运行
+        return { status: "passed", artifacts: [], data: {}, log: "ok" };
+      },
+      async (ctx) => { order.push(`s1:${ctx.jobId}`); return { status: "passed", artifacts: [], data: {}, log: "ok" }; },
+    ];
+    const engine = new PipelineEngine({ store, steps, services: { render: () => ({}) } as unknown as Services, projectRoot: dir });
+
+    // 先让 rerunId 完整跑完，作为稍后 rerun 的目标
+    const rerunId = store.createJob(cfg);
+    await engine.processNext();
+    expect(store.getJob(rerunId)?.status).toBe("completed");
+    expect(store.getStepOutputs(rerunId)).toHaveLength(2);
+
+    // 慢任务开始 drain；processNext 返回时 drain 已同步执行到 step0 的 await gate。
+    // 此时对另一个已完成任务发起 rerunFrom —— 它只入队，不新起 drain（单飞 join）。
+    slowId = store.createJob(cfg);
+    const drain = engine.processNext();
+    engine.rerunFrom(rerunId, 1);
+    release();
+    await drain;
+
+    // 两个任务都必须完成：rerun 由在途 drain 的重扫兜住，无需再次显式 enqueue
+    expect(store.getJob(slowId)?.status).toBe("completed");
+    expect(store.getJob(rerunId)?.status).toBe("completed");
+    expect(order).toEqual(["s0:" + rerunId, "s1:" + rerunId, "s0:" + slowId, "s1:" + slowId, "s1:" + rerunId]);
+  });
 });
