@@ -15,7 +15,7 @@ describe("buildBeatBoundaries", () => {
     ]);
   });
 
-  test("no voiceover: durations normalized to target total", () => {
+  test("no voiceover: boundaries use estimated durations (not normalized)", () => {
     const b = buildBeatBoundaries([], [{ durationSec: 2 }, { durationSec: 8 }]);
     expect(b).toEqual([
       { index: 1, startSec: 0, endSec: 2 },

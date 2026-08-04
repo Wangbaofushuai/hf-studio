@@ -63,6 +63,40 @@ describe("step3Tts", () => {
     expect(boundaries[1].endSec).toBeCloseTo(2.0, 1);
   });
 
+  test("voiceover: audio duration deviating >30% from estimate returns gate_failed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hf-step3c-"));
+    const prev: StepOutput[] = [
+      { step: 0, status: "passed", artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 1, status: "passed", artifacts: [], data: {}, log: "", attempts: 1 },
+      {
+        step: 2, status: "passed", artifacts: [], data: {
+          storyboard: { beats: [
+            { index: 1, id: "beat-1", title: "a", narration: "第一句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
+            { index: 2, id: "beat-2", title: "b", narration: "第二句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 5 },
+          ] },
+        }, log: "", attempts: 1,
+      },
+    ];
+    const tts = {
+      synthesizeToWav: async (text: string, _voice: string, outWav: string) => {
+        // 假合成：写一个最小合法 wav + 返回固定时间戳（合计 2.0s，与估算 10s 偏差 80%）
+        (await import("node:fs")).writeFileSync(outWav, fakeWav);
+        return text === "第一句"
+          ? { words: [{ text: "第一", start: 0, end: 0.6 }, { text: "句", start: 0.6, end: 0.9 }], durationSec: 0.9 }
+          : { words: [{ text: "第二", start: 0, end: 0.7 }, { text: "句", start: 0.7, end: 1.1 }], durationSec: 1.1 };
+      },
+    };
+    const ctx = {
+      jobId: "j1", projectDir: dir, config: cfg,
+      tts, feedback: null, log: () => {},
+    } as unknown as StepContext;
+    const r = await step3Tts(ctx, prev);
+    expect(r.status).toBe("gate_failed");
+    expect(r.artifacts).toEqual([]);
+    expect(r.gateErrors?.[0]).toContain("时长");
+    expect(r.gateErrors?.[0]).toContain("偏差");
+  });
+
   test("voiceover=false skips synthesis with estimated boundaries", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hf-step3b-"));
     const prev: StepOutput[] = [
