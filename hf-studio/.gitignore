@@ -1,0 +1,7 @@
+node_modules/
+dist/
+data/
+server/config.json
+*.mp4
+*.wav
+.env
