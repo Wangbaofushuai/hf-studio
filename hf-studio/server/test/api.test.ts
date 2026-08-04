@@ -192,4 +192,23 @@ describe("API", () => {
     const res = await server.fetch(new Request(`${base}/api/jobs/${idA}/files/../${idB}/secret.txt`));
     expect(res.status).toBe(404);
   });
+
+  test("POST /api/jobs rejects non-numeric durationSec (NaN bypass)", async () => {
+    const post = (durationSec: string) => {
+      const form = new FormData();
+      form.set("idea", "时长校验");
+      form.set("durationSec", durationSec);
+      form.set("format", "landscape");
+      return server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    };
+    // Number("abc") = NaN：旧实现会同时骗过 <5 和 >120，导致非法任务入队
+    const nan = await post("abc");
+    expect(nan.status).toBe(400);
+    expect(await nan.json()).toMatchObject({ error: "durationSec 需在 5-120 之间" });
+    expect((await post("4")).status).toBe(400);
+    expect((await post("121")).status).toBe(400);
+    // 边界值合法
+    expect((await post("5")).status).toBe(201);
+    expect((await post("120")).status).toBe(201);
+  });
 });
