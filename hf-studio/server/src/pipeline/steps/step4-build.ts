@@ -78,6 +78,8 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         ],
         temperature: 0.5,
         seed: 44,
+        // beat 生成是流水线中最长的输出（完整 HTML 合成），且推理模型先思考后输出，给足预算
+        timeoutMs: 420_000,
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       writeFileSync(file, content.trim());

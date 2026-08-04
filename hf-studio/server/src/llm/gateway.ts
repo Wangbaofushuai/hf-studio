@@ -5,9 +5,9 @@ import type { LlmProvider } from "../types";
 export { LlmApiError } from "./errors"; // 再导出，测试与调用方统一从 gateway 入口引用
 export type { LlmProvider } from "../types"; // 从共享类型再导出，避免循环依赖
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
-export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number }
+export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number; timeoutMs?: number }
 export interface ChatResult { content: string; promptTokens: number; completionTokens: number }
-export type Transport = (provider: LlmProvider, body: Record<string, unknown>) => Promise<ChatResult>;
+export type Transport = (provider: LlmProvider, body: Record<string, unknown>, timeoutMs?: number) => Promise<ChatResult>;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,10 +24,12 @@ export class LlmGateway {
     return { provider, modelId: rest.join("/") };
   }
 
-  private async defaultTransport(provider: LlmProvider, body: Record<string, unknown>): Promise<ChatResult> {
+  private async defaultTransport(provider: LlmProvider, body: Record<string, unknown>, timeoutMs?: number): Promise<ChatResult> {
     const controller = new AbortController();
-    const timeoutMs = this.opts.timeoutMs ?? 120_000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // 默认 300s：推理模型（如 deepseek-v4-flash）先思考后输出，长 HTML 生成可超 120s；
+    // 调用方可传 timeoutMs 覆盖（step4 的 beat 生成传更长超时）
+    const t = timeoutMs ?? this.opts.timeoutMs ?? 300_000;
+    const timer = setTimeout(() => controller.abort(), t);
     try {
       const res = await fetch(`${provider.baseURL.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
@@ -48,7 +50,7 @@ export class LlmGateway {
       };
     } catch (e) {
       if (e instanceof LlmApiError) throw e;
-      if (e instanceof Error && e.name === "AbortError") throw new LlmApiError(`timeout after ${timeoutMs}ms`, "timeout", true);
+      if (e instanceof Error && e.name === "AbortError") throw new LlmApiError(`timeout after ${t}ms`, "timeout", true);
       throw new LlmApiError(`network error: ${e instanceof Error ? e.message : String(e)}`, "network", true);
     }
   }
@@ -63,7 +65,7 @@ export class LlmGateway {
     if (params.seed !== undefined) body.seed = params.seed;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
     const transport = this.opts.transport ?? this.defaultTransport.bind(this);
-    return transport(provider, body);
+    return transport(provider, body, params.timeoutMs);
   }
 
   async chatJson<T>(params: ChatParams, schema: z.ZodType<T>): Promise<{ data: T; raw: string }> {
