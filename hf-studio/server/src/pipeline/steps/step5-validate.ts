@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
+import { stripCodeFences } from "../../util/clean-output";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
 
@@ -51,7 +52,7 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         // 修复同样要求严格遵守 composition 契约，强制开启思考（与 step4 同理）
         thinking: "enabled",
       });
-      writeFileSync(abs, fixed.trim());
+      writeFileSync(abs, stripCodeFences(fixed));
     }
     check = await ctx.render.check();
   }

@@ -148,4 +148,36 @@ describe("step4Build", () => {
     expect(r.gateErrors?.join("; ")).toContain("final bad html");
     expect(r.data.beats).toHaveLength(2); // 两个 beat 都已写入
   });
+
+  test("markdown code fences around LLM output are stripped before writing", async () => {
+    // 推理模型习惯性用 ```html ... ``` 包裹输出——直接写盘会让 hyperframes 解析失败
+    // （lint 报 root_missing_composition_id 等，E2E 实测跨轮次全败于此）
+    let calls = 0;
+    const { ctx, prev } = makeCtxWithLint(async () => {
+      calls++;
+      const missing = ["beat-1", "beat-2"].slice(calls);
+      return {
+        ok: missing.length === 0,
+        errorCount: missing.length,
+        findings: missing.map((id) => ({
+          code: "missing_or_empty_sub_composition",
+          message: `data-composition-src references "compositions/${id}.html", but the file does not exist.`,
+          severity: "error",
+        })),
+      };
+    });
+    // 让 mock LLM 输出带围栏的 HTML
+    const llm = new LlmGateway(mockProviders, {
+      transport: mockTransport(async () => ({
+        content: "```html\n" + BEAT_HTML("beat-1") + "\n```",
+      })),
+    });
+    (ctx as any).llm = llm;
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("passed");
+    const written = readFileSync(join((ctx as any).projectDir, "compositions/beat-1.html"), "utf8");
+    expect(written.startsWith("```")).toBe(false);
+    expect(written.startsWith("<!doctype html>")).toBe(true);
+    expect(written).not.toContain("```");
+  });
 });
