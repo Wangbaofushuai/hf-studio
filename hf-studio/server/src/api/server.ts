@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { mkdirSync, readdirSync, statSync, createReadStream } from "node:fs";
-import { join, normalize, relative } from "node:path";
+import { isAbsolute, join, normalize, relative } from "node:path";
 import type { JobStore } from "../db/store";
 import type { PipelineEngine } from "../pipeline/engine";
 import type { AppConfig } from "../config";
@@ -41,7 +41,8 @@ export function createServer(opts: {
     const providers = parseProviders(String(form.get("providers") ?? ""));
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
-    if (durationSec < 5 || durationSec > 120) {
+    // Number("abc") = NaN 会同时骗过 < 5 与 > 120 两个比较，必须显式拒绝非有限数
+    if (!Number.isFinite(durationSec) || durationSec < 5 || durationSec > 120) {
       return c.json({ error: "durationSec 需在 5-120 之间" }, 400);
     }
     if (!["landscape", "portrait", "square"].includes(format)) return c.json({ error: "format 不合法" }, 400);
@@ -135,7 +136,10 @@ export function createServer(opts: {
     const rest = c.req.path.split(`/api/jobs/${jobId}/files/`)[1] ?? "";
     const base = join(opts.projectsRoot, jobId);
     const target = normalize(join(base, rest));
-    if (!target.startsWith(base) || !statSync(target, { throwIfNoEntry: false })?.isFile()) {
+    // 路径钳制：target 必须是 base 之内的普通文件。不能用字符串前缀判断——
+    // normalize 后 "../" 可能已跨出 base，或兄弟目录名以 base 为前缀（前缀碰撞）。
+    const rel = relative(base, target);
+    if (rel.startsWith("..") || isAbsolute(rel) || !statSync(target, { throwIfNoEntry: false })?.isFile()) {
       return c.json({ error: "not found" }, 404);
     }
     return new Response(Bun.file(target));

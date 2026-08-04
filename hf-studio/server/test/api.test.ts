@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/api/server";
@@ -159,5 +159,37 @@ describe("API", () => {
       release();
       rmSync(d, { recursive: true, force: true });
     }
+  });
+
+  test("GET /api/jobs/:id/files/* serves files inside the job dir", async () => {
+    const { jobs } = (await (await server.fetch(new Request(`${base}/api/jobs`))).json()) as { jobs: { id: string }[] };
+    const id = jobs[0].id;
+    const proj = join(dir, "projects", id);
+    mkdirSync(proj, { recursive: true });
+    writeFileSync(join(proj, "hello.txt"), "hello");
+    const res = await server.fetch(new Request(`${base}/api/jobs/${id}/files/hello.txt`));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("hello");
+  });
+
+  test("GET /api/jobs/:id/files/* rejects path traversal across job boundaries", async () => {
+    const mk = async (idea: string) => {
+      const form = new FormData();
+      form.set("idea", idea);
+      form.set("durationSec", "10");
+      form.set("format", "landscape");
+      const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const idA = await mk("A");
+    const idB = await mk("B");
+    // job B 项目目录内放一个真实存在的文件
+    const projB = join(dir, "projects", idB);
+    mkdirSync(projB, { recursive: true });
+    writeFileSync(join(projB, "secret.txt"), "top secret");
+    // 穿越请求：<idA> 的 files/.. 指向 <idB> 的文件 → 必须 404
+    const res = await server.fetch(new Request(`${base}/api/jobs/${idA}/files/../${idB}/secret.txt`));
+    expect(res.status).toBe(404);
   });
 });
