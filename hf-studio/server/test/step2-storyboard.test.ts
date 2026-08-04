@@ -29,7 +29,7 @@ const goodPayload = JSON.stringify({
 function makeCtx(reply: string, judgeScore = 8, judgeReply?: string): StepContext {
   const llm = new LlmGateway(mockProviders, {
     transport: mockTransport(async (_p, body) => {
-      const userMsg = String(body.messages.at(-1)?.content ?? "");
+      const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
       if (userMsg.includes("评审")) {
         if (judgeReply !== undefined) return { content: judgeReply };
         return { content: JSON.stringify({ rubric: { clarity: judgeScore, pacing: judgeScore, visualRichness: judgeScore, match: judgeScore }, score: judgeScore, feedback: "ok" }) };

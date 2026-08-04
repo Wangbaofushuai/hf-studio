@@ -80,8 +80,8 @@ export class JobStore {
     this.db.run(
       "UPDATE jobs SET status = ?, current_step = ?, error = ?, config = ?, updated_at = ? WHERE id = ?",
       [patch.status ?? job.status,
-       "currentStep" in patch ? patch.currentStep : job.currentStep,
-       "error" in patch ? patch.error : job.error,
+       ("currentStep" in patch ? patch.currentStep : job.currentStep) ?? null,
+       ("error" in patch ? patch.error : job.error) ?? null,
        JSON.stringify(patch.config ?? job.config), new Date().toISOString(), jobId],
     );
   }

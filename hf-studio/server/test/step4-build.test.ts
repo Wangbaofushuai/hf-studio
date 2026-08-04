@@ -31,7 +31,7 @@ window.__timelines["${id}"] = tl;
 function makeCtx(lintErrorCount: number): { ctx: StepContext; prev: StepOutput[]; lintCalls: () => number } {
   const llm = new LlmGateway(mockProviders, {
     transport: mockTransport(async (_p, body) => {
-      const userMsg = String(body.messages.at(-1)?.content ?? "");
+      const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
       const m = userMsg.match(/beat-(\d+)/);
       const id = m ? `beat-${m[1]}` : "beat-1";
       return { content: BEAT_HTML(id) };

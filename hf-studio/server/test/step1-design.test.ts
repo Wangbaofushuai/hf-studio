@@ -19,7 +19,7 @@ const DESIGN = "# DESIGN\n\n## Visual Theme\n暗色极简\n## Quick Reference\n#
 function makeCtx(genReply: string, judgeScore = 8): StepContext {
   const llm = new LlmGateway(mockProviders, {
     transport: mockTransport(async (_p, body) => {
-      const userMsg = String(body.messages.at(-1)?.content ?? "");
+      const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
       if (userMsg.includes("评审")) {
         return { content: JSON.stringify({ rubric: { clarity: judgeScore, pacing: judgeScore, visualRichness: judgeScore, match: judgeScore }, score: judgeScore, feedback: "ok" }) };
       }
