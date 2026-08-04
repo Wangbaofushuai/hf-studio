@@ -96,8 +96,8 @@ cd hf-studio/server && bun run e2e
 ```
 hf-studio/data/
 ├── jobs.db                      # SQLite：jobs / step_runs / 任务配置
-├── uploads/                     # 用户上传素材（按 job 隔离）
 └── projects/<jobId>/            # 每任务完整产物 —— 标准 HyperFrames 项目
+    ├── assets/                  # 用户上传素材（按 job 隔离）+ 生成的配音
     ├── brief.json               # 步骤 0：需求要点（结构化）
     ├── DESIGN.md                # 步骤 1：视觉主题与色彩/字体规范
     ├── STORYBOARD.md            # 步骤 2：分镜
