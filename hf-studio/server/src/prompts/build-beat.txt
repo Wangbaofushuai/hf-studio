@@ -13,12 +13,16 @@
    样式用 #root 选择器（不能给根元素加 class 再按 class 写样式，作用域化后失效）。
 3. 时间轴：注册且只注册一个 window.__timelines["beat-N"] = gsap.timeline({ paused: true })，同步构建。
    根元素 data-duration 即片段时长；不要嵌套子时间轴，不要 gsap 操作片段外的元素。
-4. 动画元素：class="clip" + data-start（相对片段起点）+ data-duration + data-track-index（同轨不重叠）。
+4. 动画元素：class="clip" + data-start（相对片段起点）+ data-duration + data-track-index。
+   **同轨道 clip 时间窗绝不允许重叠（含浮点误差）**：每个 clip 严格 data-duration = 结束时间 − 开始时间，
+   相邻 clip 之间至少留 0.1s 安全间隙；时间值用整数或一位小数（如 0.5、2.3），禁止产生 4.96/4.97 这类
+   浮点尾数——lint 报 overlapping_clips_same_track 即失败。
 5. 动画规则：
    - 入场用 gsap.fromTo()（显式起点终点），禁用 gsap.from()；
    - 初始状态写在 tween 里；禁止 CSS transform 与 GSAP tween 同属性冲突（lint 报 gsap_css_transform_conflict）；
    - 禁止：渲染时时钟、Math.random()、网络请求、repeat:-1；禁止 gsap.set 未来片段元素；
-   - 只动画视觉属性（transform/opacity/color/filter/clip-path 等）；禁止 tween display 或 visibility；
+   - 只动画视觉属性（transform/opacity/color/filter/clip-path 等）；禁止 tween display/visibility，
+     也禁止 tween left/top 这类布局属性（lint 报 gsap_non_transform_motion，改用 x/y）；
    - 正文禁止 <br>；被 transform 的元素必须块级且有尺寸；元素 id 加 beat-N- 前缀保证全局唯一。
 6. 媒体：<video> 必须 muted + playsinline；音频用独立 <audio>；禁止调用 play()/pause()/seek()；
    禁止动画媒体元素自身尺寸（包一层未计时的 wrapper）。
@@ -27,3 +31,8 @@
    入场 0.6-1.2s → 内容动画分布在中间 → 结尾 0.3-0.5s 稳定终态；片段内动画时长总和 ≤ 窗口时长。
 9. 视觉质量：严格使用 DESIGN.md 的颜色与字体；字号分层（标题 ≥ 80px、副题 40-60px、正文 ≥ 32px，按画幅微调）；
    至少 2 个动画层次（入场 + 内容动效）；留白充足；结束时画面稳定不闪烁。
+   **字体声明**：只用通用字体栈 "system-ui, sans-serif"（或 DESIGN.md 明确指定的字体并同时提供 @font-face）；
+   禁止声明 "noto sans sc"、"pingfang sc"、"microsoft yahei" 等未提供 @font-face 的具名中文字体——
+   lint 报 font_family_without_font_face 即失败。
+10. 素材引用：只引用"素材清单"中真实存在的文件；禁止引用未提供的素材（如自造 assets/sun_icon.svg）——
+    lint 报 missing_local_asset 即失败；无素材时全部用程序化图形（CSS/SVG/Canvas 绘制）。
