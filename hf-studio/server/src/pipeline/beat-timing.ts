@@ -1,5 +1,16 @@
 export interface Boundary { index: number; startSec: number; endSec: number }
 
+// 语速表：字符/秒（按旁白语言取，用于把旁白字数换算成预计配音时长）
+const SPEECH_RATE: Record<string, number> = { zh: 4, ja: 5, en: 13 };
+const DEFAULT_RATE = 8;
+
+/** 旁白时长估算：字数 ÷ 语速（确定性，不依赖 LLM 的 durationSec 拍脑袋值） */
+export function estimateSec(narration: string, language: string): number {
+  const langKey = Object.keys(SPEECH_RATE).find((k) => language.toLowerCase().startsWith(k)) ?? "";
+  const rate = SPEECH_RATE[langKey] ?? DEFAULT_RATE;
+  return Math.max(narration.trim().length / rate, 0.5);
+}
+
 export function buildBeatBoundaries(
   wordsPerBeat: { words: { text: string; start: number; end: number }[] }[],
   beats: { durationSec: number }[],

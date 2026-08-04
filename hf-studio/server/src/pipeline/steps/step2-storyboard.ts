@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { StepContext, StepFn, StepResult, Brief, Beat, JudgeResult } from "../../types";
+import { estimateSec } from "../beat-timing";
 
 const BeatSchema = z.object({
   title: z.string().min(1).max(30),
@@ -54,6 +55,13 @@ export const step2Storyboard: StepFn = async (ctx: StepContext, prev): Promise<S
   if (dev > 0.2) errors.push(`片段总时长 ${total.toFixed(1)}s 与目标 ${ctx.config.durationSec}s 偏差 ${(dev * 100).toFixed(0)}% > 20%`);
   if (ctx.config.voiceover) {
     payload.beats.forEach((b, i) => { if (!b.narration.trim()) errors.push(`Beat ${i + 1} 缺少旁白`); });
+    // 旁白长度门：视频时长 = 旁白时长（配音模式），旁白必须填满目标时长——
+    // 否则 LLM 会虚增 durationSec 骗过上面的时长门，产出远短于目标时长的视频（E2E 实测 8.7s vs 15s）
+    const narrationSec = payload.beats.reduce((s, b) => s + estimateSec(b.narration, ctx.config.language), 0);
+    const narrDev = Math.abs(narrationSec - ctx.config.durationSec) / ctx.config.durationSec;
+    if (narrDev > 0.2) {
+      errors.push(`旁白总时长 ${narrationSec.toFixed(1)}s 与目标 ${ctx.config.durationSec}s 偏差 ${(narrDev * 100).toFixed(0)}% > 20%（请加长/精简旁白以匹配目标时长）`);
+    }
   }
   if (errors.length > 0) {
     return { status: "gate_failed", artifacts: [], data: {}, log: `分镜结构校验失败`, gateErrors: errors };
