@@ -42,6 +42,7 @@ export class PipelineEngine {
   constructor(private opts: { store: JobStore; steps: StepFn[]; services: Services; projectRoot: string }) {}
 
   onEvent(cb: (e: EngineEvent) => void): void { this.listeners.push(cb); }
+  offEvent(cb: (e: EngineEvent) => void): void { this.listeners = this.listeners.filter((l) => l !== cb); }
   private emit(e: EngineEvent): void { for (const cb of this.listeners) cb(e); }
 
   enqueue(jobId: string): void {
