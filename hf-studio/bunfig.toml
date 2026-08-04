@@ -1,0 +1,5 @@
+# Project-level bun config: the host ~/.npmrc points at a Tencent mirror URL
+# that bun mishandles (404). This project uses the official registry instead;
+# no host configuration is modified.
+[install]
+registry = "https://registry.npmjs.org"
