@@ -25,6 +25,7 @@ describe("RenderService", () => {
     expect(existsSync(join(dir, "hyperframes.json"))).toBe(true);
     const lint = await svc.lint();
     expect(lint.errorCount).toBe(0);
+    expect(lint.ok).toBe(true);
   }, 120000);
 
   test("doctor reports environment", async () => {

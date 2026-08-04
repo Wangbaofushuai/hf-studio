@@ -138,13 +138,17 @@ export class RenderService {
     writeFileSync(join(this.projectDir, "package.json"), BLANK_PACKAGE_JSON(name));
   }
 
-  async lint(): Promise<{ errorCount: number; findings: LintFinding[] }> {
+  async lint(): Promise<{ ok: boolean; errorCount: number; findings: LintFinding[] }> {
     const r = await this.exec(["lint", "--json"]);
     const parsed = JSON.parse(r.stdout) as {
+      ok?: boolean;
       errorCount: number;
       findings: { rule: string; message: string; severity: string; file?: string }[];
     };
     return {
+      // 真实 CLI 在"无合成"等场景会报 ok:false 且 errorCount:0，因此 ok 必须透传；
+      // 旧版 CLI 无 ok 字段时按 errorCount===0 兜底
+      ok: parsed.ok ?? (parsed.errorCount === 0),
       errorCount: parsed.errorCount,
       findings: (parsed.findings ?? []).map((f) => ({
         rule: f.rule,
