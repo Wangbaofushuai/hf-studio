@@ -32,7 +32,7 @@ HyperFrames（github.com/heygen-com/hyperframes）是开源框架：写 HTML/CSS
 | 核心痛点 | LLM 输出质量波动 → 质量门 + 重试机制 |
 | 使用范围 | 先自用，预留多用户扩展（jobs.user_id 可空） |
 | 渲染 | 本机（FFmpeg + headless Chrome，hyperframes CLI） |
-| LLM 接入 | OpenAI 兼容 API 为主（DeepSeek / GLM / Qwen / OpenAI 等），provider 可配置 |
+| LLM 接入 | OpenAI 兼容 API 为主（DeepSeek / GLM / Qwen / OpenAI 等）；**前端可自定义渠道与 Key（BYOK：名称/BaseURL/Key/模型列表）**，服务端 `config.json` 提供可选内置渠道；自定义渠道优先于同名内置渠道 |
 | TTS | Edge-TTS 为主（本地+云可配置思路），音色可选 |
 | 视频类型 | MVP = 图文解说视频（faceless explainer） |
 | 交互模式 | 默认全自动，中间产物（storyboard / 快照）网页可见、可重生成 |
@@ -73,7 +73,7 @@ HyperFrames（github.com/heygen-com/hyperframes）是开源框架：写 HTML/CSS
 1. **API Server** — 只有路由和参数校验，不藏业务逻辑。REST + SSE。
 2. **Pipeline Engine** — 任务状态机：步骤 DAG、重试策略、干预操作（重跑某步、换模型重试）。不感知 LLM 细节。
 3. **7 个 Step 模块**（`src/pipeline/steps/` 每步一目录）— 每步：入参 artifacts + 配置 → 产出 artifacts + 该校步骤的校验器。每步可独立运行、独立测试。
-4. **LLM Gateway** — OpenAI 兼容统一客户端：provider 配置（baseURL / key / model / 温度等）、结构化输出解析、超时与重试退避、token 统计。
+4. **LLM Gateway** — OpenAI 兼容统一客户端：provider 配置（baseURL / key / model / 温度等，**支持每任务自定义渠道合并**）、结构化输出解析、超时与重试退避、token 统计。
 5. **TTS Service** — Edge-TTS 封装：音色列表、生成 wav。
 6. **Render Service** — hyperframes CLI 子进程封装（init / tts / lint / check / snapshot / render），解析 stdout/stderr。
 7. **Judge** — LLM-as-Judge 质量评分器：按评分卡打分，返回结构化评分 + 反馈意见。
@@ -123,7 +123,7 @@ AG/
 - **prompt 知识来源**：从 HyperFrames skills（`hyperframes-core` composition 契约、`hyperframes-animation` 动画规则、`hyperframes-creative` 创意方向）提炼成静态 prompt 模板放 `src/prompts/`，与代码分离、可编辑。
 - **干预点**：步骤 2 后（storyboard 面板，可改可重生成）、步骤 5 后（快照面板，可对单个 beat 重生成）。
 - **断点续跑**：任何一步失败，任务停在失败步骤，解决后从该步继续，不重跑前面步骤。重跑某步后，下游步骤标记 `stale` 待重跑。
-- **模型路由**：全局默认模型 + 每步可覆盖（如创意步骤用 GLM-4.5、构建步骤用 DeepSeek-V3）。
+- **模型路由**：全局默认模型 + 每步可覆盖（如创意步骤用 GLM-4.5、构建步骤用 DeepSeek-V3）；前端自定义渠道时，默认模型取自定义渠道的首个模型（或用户所选模型），Judge 用同一渠道评审，避免缺评审渠道卡死。
 
 ## 5. 质量控制系统（核心）
 
@@ -198,4 +198,5 @@ queued → running → step0 → step1 → … → step6 → completed
 
 - `jobs.user_id` 可空字段（现在恒空）
 - 任务配置与产物按 job 隔离，天然支持按用户隔离
+- **API key 随任务配置存 SQLite（明文）**——学习测试环境可接受；多用户版需加密存储 + 前端渠道管理页（已知限制，已在计划 Global Constraints 记录）
 - API 层不绑定单用户假设；未来加认证时只需在 API Server 加中间件
