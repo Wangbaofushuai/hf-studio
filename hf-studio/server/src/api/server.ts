@@ -91,6 +91,8 @@ export function createServer(opts: {
   app.post("/api/jobs/:id/rerun", async (c) => {
     const job = opts.store.getJob(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
+    // 排队/运行中重跑会与在途 runJob 并发写 step_runs（已删的行不会再跑，最终 completed 且 step 缺失）
+    if (job.status === "queued" || job.status === "running") return c.json({ error: "任务正在运行中，请稍后重试" }, 409);
     const body = (await c.req.json().catch(() => ({}))) as { step?: number; model?: string };
     const step = body.step as StepId | undefined;
     if (step === undefined || step < 0 || step > 6) return c.json({ error: "step 需在 0-6" }, 400);

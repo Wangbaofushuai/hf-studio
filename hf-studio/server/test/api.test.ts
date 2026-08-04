@@ -101,4 +101,63 @@ describe("API", () => {
     expect(res.status).toBe(202);
     expect(store.getJob(jobs[0].id)?.config.models.default).toBe("fake/model-b");
   });
+
+  test("POST /api/jobs/:id/rerun returns 409 while job is queued", async () => {
+    const d = mkdtempSync(join(tmpdir(), "hf-api-q-"));
+    const s = new JobStore(join(d, "jobs.db")); s.init();
+    const engine = new PipelineEngine({ store: s, steps: [], services: { render: () => ({}), judge: { threshold: 7 } } as never, projectRoot: join(d, "projects") });
+    const srv = createServer({ store: s, engine, config, projectsRoot: join(d, "projects"), tts: { listVoices: async () => [] } as never });
+    try {
+      // 直接建任务不入队 → 恒为 queued
+      const id = s.createJob({ idea: "q", durationSec: 10, format: "landscape", voiceover: false, voice: "zh-CN-XiaoxiaoNeural", language: "zh-CN", models: { default: "fake/model-a" }, materials: { images: [], audio: null } });
+      expect(s.getJob(id)?.status).toBe("queued");
+      const res = await srv.fetch(new Request(`${base}/api/jobs/${id}/rerun`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step: 0 }) }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: "任务正在运行中，请稍后重试" });
+      expect(s.getJob(id)?.status).toBe("queued"); // 状态未被改动
+      expect(s.getStepOutputs(id)).toHaveLength(0);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  test("POST /api/jobs/:id/rerun returns 409 while job is running and leaves state unchanged", async () => {
+    const d = mkdtempSync(join(tmpdir(), "hf-api-r-"));
+    const s = new JobStore(join(d, "jobs.db")); s.init();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const steps: StepFn[] = [async () => { await gate; return { status: "passed", artifacts: [], data: {}, log: "slow ok" }; }];
+    const engine = new PipelineEngine({ store: s, steps, services: { render: () => ({}), judge: { threshold: 7 } } as never, projectRoot: join(d, "projects") });
+    const srv = createServer({ store: s, engine, config, projectsRoot: join(d, "projects"), tts: { listVoices: async () => [] } as never });
+    try {
+      const form = new FormData();
+      form.set("idea", "慢任务");
+      form.set("durationSec", "10");
+      form.set("format", "landscape");
+      const res = await srv.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+      expect(res.status).toBe(201);
+      const { id } = (await res.json()) as { id: string };
+      // 等引擎进入 running（慢 step 阻塞在 gate 上）
+      for (let i = 0; i < 200; i++) {
+        if (s.getJob(id)?.status === "running") break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(s.getJob(id)?.status).toBe("running");
+      const rerun = await srv.fetch(new Request(`${base}/api/jobs/${id}/rerun`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step: 0 }) }));
+      expect(rerun.status).toBe(409);
+      expect(await rerun.json()).toMatchObject({ error: "任务正在运行中，请稍后重试" });
+      expect(s.getJob(id)?.status).toBe("running"); // 状态未被改动
+      expect(s.getStepOutputs(id)).toHaveLength(0); // step_runs 未被并发破坏
+      release();
+      for (let i = 0; i < 200; i++) {
+        if (s.getJob(id)?.status === "completed") break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(s.getJob(id)?.status).toBe("completed"); // 放行后正常完成
+      expect(s.getStepOutputs(id)).toHaveLength(1);
+    } finally {
+      release();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
