@@ -14,6 +14,7 @@ export interface LlmProvider {
   apiKey: string;
   models: string[];                               // 该渠道可用模型 id
   temperature?: number;
+  thinking?: "enabled" | "disabled";              // 推理模型思考开关：disabled 时请求带 thinking:{type:"disabled"}（deepseek-v4-flash 支持，生成速度提升 10 倍+）
 }
 
 export interface JobConfig {

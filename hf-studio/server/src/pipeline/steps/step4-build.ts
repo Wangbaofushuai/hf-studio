@@ -80,6 +80,8 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         seed: 44,
         // beat 生成是流水线中最长的输出（完整 HTML 合成），且推理模型先思考后输出，给足预算
         timeoutMs: 420_000,
+        // 强制开启思考：无思考模式下模型多次无法遵守 composition 契约（E2E 实测 lint 3 次全败）
+        thinking: "enabled",
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       writeFileSync(file, content.trim());

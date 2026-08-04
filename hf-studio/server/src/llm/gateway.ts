@@ -5,7 +5,7 @@ import type { LlmProvider } from "../types";
 export { LlmApiError } from "./errors"; // 再导出，测试与调用方统一从 gateway 入口引用
 export type { LlmProvider } from "../types"; // 从共享类型再导出，避免循环依赖
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string }
-export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number; timeoutMs?: number }
+export interface ChatParams { model: string; messages: ChatMessage[]; temperature?: number; seed?: number; maxTokens?: number; timeoutMs?: number; thinking?: "enabled" | "disabled" }
 export interface ChatResult { content: string; promptTokens: number; completionTokens: number }
 export type Transport = (provider: LlmProvider, body: Record<string, unknown>, timeoutMs?: number) => Promise<ChatResult>;
 
@@ -62,6 +62,11 @@ export class LlmGateway {
       messages: params.messages,
       temperature: params.temperature ?? provider.temperature ?? 0.7,
     };
+    // 推理模型思考开关：渠道配置 thinking:"disabled" 时默认关闭思考（如 deepseek-v4-flash，
+    // 生成速度提升一个数量级）；调用方可用 params.thinking 覆盖——
+    // 例如 step4/step5 的 HTML 生成要求严格遵守 composition 契约，强制 thinking:"enabled"
+    const thinking = params.thinking ?? provider.thinking;
+    if (thinking === "disabled") body.thinking = { type: "disabled" };
     if (params.seed !== undefined) body.seed = params.seed;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
     const transport = this.opts.transport ?? this.defaultTransport.bind(this);
