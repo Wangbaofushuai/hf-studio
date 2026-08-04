@@ -89,7 +89,9 @@ cd hf-studio/server && bun run e2e
 
 真实 LLM + 真实 Edge-TTS + 真实 hyperframes 渲染，跑通 15 秒竖屏 demo，产出 `data/projects/<jobId>/renders/output.mp4`。
 
-> ⚠️ **需要真实 LLM key**：E2E 要求 `server/config.json` 配置了真实 provider（非占位 key `sk-REPLACE_ME`）。未配置时脚本立即 `exit 2` 并提示，不会拿占位密钥去请求。目前（2026-08-04）等待用户提供 API key 后实跑验收；脚本与守卫已入库，拿到 key 后直接 `bun run e2e` 即可。
+> ✅ **已实跑通过（2026-08-05）**：deepseek-v4-flash 渠道，7 步全绿，约 14 分钟产出 16.5s 竖屏视频（check 零错误）。
+> 性能配置：非生成步骤用 `thinking: disabled`（快），beat/修复生成用 `thinking: enabled + reasoning_effort: low`（30 秒级、契约合规）。
+> 未配置真实 key 时脚本立即 `exit 2` 提示，不会拿占位密钥请求。
 
 ## 产物目录
 
@@ -118,7 +120,7 @@ hf-studio/data/
 - **MVP 仅图文解说视频**：faceless explainer；slideshow / product-launch / motion-graphics 不在范围。
 - **API key 明文存 SQLite**：学习测试环境可接受；多用户版需加密存储 + 前端渠道管理页。
 - **BGM 不自动生成**：仅支持用户上传音频素材。
-- **E2E 未实跑**：等真实 LLM key（见上）。
+- **E2E 已实跑通过**：deepseek-v4-flash 渠道（见上）；换渠道/模型后建议重跑 `bun run e2e` 验收。
 
 ## 目录结构
 
