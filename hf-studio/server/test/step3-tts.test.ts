@@ -32,9 +32,11 @@ describe("step3Tts", () => {
     expect(estimateSec("テスト", "ja-JP")).toBeCloseTo(3 / 5, 5);
     expect(estimateSec("abcdefgh", "fr-FR")).toBeCloseTo(1.0, 5);           // 未收录语言用默认语速 8
     expect(estimateSec("ab", "fr-FR")).toBe(0.5);                           // 低于 0.5s 时取下限兜底
-    // 标点不计入字数：60 字符含 14 标点 → 按 46 字估算（防旁白门被标点骗过）
-    expect(estimateSec("太阳，是地球最慷慨的能量来源。光伏效应，让光直接变成电。光子激发电子，形成电流。", "zh-CN"))
-      .toBeCloseTo(46 / 4, 5);
+    // 标点不计入字数：用与实现相同的口径计算期望（防手数错误）
+    const punctText = "太阳，是地球最慷慨的能量来源。光伏效应，让光直接变成电。光子激发电子，形成电流。";
+    const letters = punctText.replace(/[^\p{L}\p{N}]/gu, "").length;
+    expect(estimateSec(punctText, "zh-CN")).toBeCloseTo(letters / 4, 5);
+    expect(letters).toBe(34); // 锚定口径：34 字（不是原始 60 字符）
   });
 
   test("voiceover: synthesizes per beat, concatenates, writes transcript.json", async () => {
