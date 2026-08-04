@@ -72,6 +72,14 @@ export class PipelineEngine {
     if (!job) return;
     const projectDir = join(this.opts.projectRoot, jobId);
     mkdirSync(projectDir, { recursive: true });
+    // 生产链路在 step0 之前初始化项目脚手架（meta.json/hyperframes.json/package.json，
+    // 及全新目录下的空白 index.html）。initProject 对 index.html 采用"存在则跳过"，
+    // rerunFrom 恢复时不会覆盖 step4 生成的真实 index.html；step5 的脚手架兜底守卫
+    // 因 meta.json 已存在而保持惰性。测试桩 render 无 initProject 方法时跳过。
+    const render = this.opts.services.render(projectDir);
+    if ("initProject" in render) {
+      await render.initProject(jobId, job.config.format);
+    }
     this.emit({ type: "job_status", jobId, status: "running", currentStep: job.currentStep, message: "started" });
 
     // 按任务组装渠道：自定义渠道（前端 BYOK）优先于内置渠道

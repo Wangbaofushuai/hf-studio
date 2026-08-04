@@ -132,7 +132,12 @@ export class RenderService {
     const { w, h } = RESOLUTIONS[format];
     mkdirSync(join(this.projectDir, "compositions"), { recursive: true });
     mkdirSync(join(this.projectDir, "assets"), { recursive: true });
-    writeFileSync(join(this.projectDir, "index.html"), BLANK_INDEX_HTML(w, h));
+    // index.html 采用"存在则跳过"（Task 13 携带指针）：生产链路在 step0 前调用
+    // initProject，若这里无条件覆盖，rerunFrom 恢复时会拿空白模板覆盖 step4 生成的
+    // 真实 index.html。全新目录下 index.html 不存在，仍写入空白模板，行为与之前一致。
+    if (!existsSync(join(this.projectDir, "index.html"))) {
+      writeFileSync(join(this.projectDir, "index.html"), BLANK_INDEX_HTML(w, h));
+    }
     writeFileSync(join(this.projectDir, "meta.json"), BLANK_META(name, new Date().toISOString()));
     writeFileSync(join(this.projectDir, "hyperframes.json"), BLANK_HYPERFRAMES_JSON);
     writeFileSync(join(this.projectDir, "package.json"), BLANK_PACKAGE_JSON(name));

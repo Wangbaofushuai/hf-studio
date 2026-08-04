@@ -89,4 +89,23 @@ describe("PipelineEngine", () => {
     expect(ran).toEqual([1, 2]); // 只重跑 step1 及之后
     expect(store.getJob(jobId)?.status).toBe("completed");
   });
+
+  test("initProject scaffolds project before step0 when render provides it", async () => {
+    const calls: string[] = [];
+    const engine = new PipelineEngine({
+      store,
+      steps: [async (ctx) => {
+        calls.push(`step0:${ctx.jobId}`);
+        return { status: "passed", artifacts: [], data: {}, log: "ok" };
+      }],
+      services: {
+        render: (projectDir: string) => ({ initProject: async () => { calls.push(`init:${projectDir}`); } }),
+      } as unknown as Services,
+      projectRoot: dir,
+    });
+    const jobId = store.createJob(cfg);
+    await engine.processNext();
+    expect(calls[0]).toBe(`init:${join(dir, jobId)}`);
+    expect(calls[1]).toBe(`step0:${jobId}`);
+  });
 });

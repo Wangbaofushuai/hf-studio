@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mkdtempSync, existsSync, readdirSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readdirSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RenderService, RESOLUTIONS } from "../src/render/service";
@@ -55,4 +55,20 @@ describe("RenderService", () => {
     const failing = new RenderService(dir, fakeBin);
     await expect(failing.snapshot([1.0])).rejects.toThrow(/snapshot failed/);
   }, 30000);
+
+  test("initProject preserves an existing index.html (resume safety)", async () => {
+    // Task 13 携带指针：生产链路在 step0 前调用 initProject；rerunFrom 恢复时
+    // 必须保留 step4 生成的真实 index.html，不被空白模板覆盖
+    const dir2 = mkdtempSync(join(tmpdir(), "hf-render-resume-"));
+    try {
+      const svc2 = new RenderService(dir2);
+      await svc2.initProject("proj", "landscape");
+      const real = "<!doctype html><html><body>REAL</body></html>";
+      writeFileSync(join(dir2, "index.html"), real);
+      await svc2.initProject("proj", "landscape");
+      expect(readFileSync(join(dir2, "index.html"), "utf8")).toBe(real);
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+    }
+  });
 });
