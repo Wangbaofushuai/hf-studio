@@ -112,7 +112,7 @@ AG/
 | 0 | 需求解析 | 表单（想法/素材/配置） | LLM 提炼需求要点 | `brief.json` | 字段齐全（主题/时长/画幅/风格/是否配音） |
 | 1 | 创意设计 | brief + 用户素材 | LLM 生成视觉主题与色彩/字体规范 | `DESIGN.md` | Judge 评分 ≥ 阈值（不合格自动重试） |
 | 2 | 分镜+脚本 | DESIGN.md + brief | LLM 写 storyboard（beat 划分）+ 旁白脚本 | `STORYBOARD.md` + `SCRIPT.md` | Judge 评分 + 结构校验（beat 数、时长和） |
-| 3 | 配音 | SCRIPT.md | Edge-TTS 按选中音色生成 | `narration.wav` + 词级 `transcript.json` | 音频非空、时长合理 |
+| 3 | 配音 | SCRIPT.md | Edge-TTS 按选中音色生成 | `narration.wav` + 词级 `transcript.json` | 音频非空、时长 > 0 且与脚本字数估算时长偏差 ≤ 30% |
 | 4 | 构建 | storyboard + transcript + 素材 | 每 beat 一次独立 LLM 调用生成 HTML composition | `compositions/*.html` | `hyperframes lint` 零错误；不过带报错重试 |
 | 5 | 验证 | compositions | `hyperframes check` + `snapshot` 关键帧截图 | 校验报告 + 快照 PNG | check 零错误；快照网页展示 |
 | 6 | 渲染 | 全部 | `hyperframes render` | `output.mp4` | ffprobe 校验（时长≈预期、有视频流） |
