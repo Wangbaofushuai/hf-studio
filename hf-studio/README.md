@@ -42,6 +42,10 @@
 
 前置环境：bun ≥ 1.3、FFmpeg + FFprobe、headless Chrome（`hyperframes browser ensure` 安装）、可访问 Edge-TTS 的网络。参见 [`docs/environment.md`](docs/environment.md)。
 
+ 1. 复制项目目录到新服务器
+# 2. 一条命令接入 vd
+ln -s <项目路径>/vd.ts /usr/local/bin/vd
+# 3. 首次使用：输入 vd → 1 → 完整一条龙自动跑（bun/依赖/ffmpeg/Chrome/key 逐项检测询问）
 ```bash
 # 1. 安装依赖（server + web）
 cd hf-studio/server && bun install
