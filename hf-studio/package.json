@@ -5,6 +5,7 @@
     "dev:server": "bun run --cwd server dev",
     "dev:web": "bun run --cwd web dev",
     "test": "bun run --cwd server test",
-    "e2e": "bun run --cwd server e2e"
+    "e2e": "bun run --cwd server e2e",
+    "test:vd": "bun test test/vd.test.ts --timeout 60000"
   }
 }

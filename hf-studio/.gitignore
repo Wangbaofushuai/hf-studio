@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/
+.tmp/
 server/config.json
 *.mp4
 *.wav
