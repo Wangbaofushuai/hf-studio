@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
-  checkDeps, which, resolveProjectRoot, isPrivateIp,
+  checkDeps, which, resolveProjectRoot, isPrivateIp, installCheck,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -92,5 +92,40 @@ describe("vd core", () => {
     expect(isPrivateIp("169.254.1.1")).toBe(true);
     expect(isPrivateIp("43.133.250.224")).toBe(false);
     expect(isPrivateIp("8.8.8.8")).toBe(false);
+  });
+
+  test("checkDeps flags missing CJK fonts as host-affecting (empty fc-list)", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    writeFileSync(join(root, "server", "config.json"), JSON.stringify({ providers: [{ apiKey: "sk-REAL" }] }));
+    // fc-list 存在但无中文字体（stdout 为空）
+    const run = async (cmd: string, args: string[]) =>
+      ({ code: cmd === "fc-list" ? 0 : 1, stdout: "" });
+    const deps = await checkDeps(root, run as never);
+    const cjk = deps.find((d) => d.name === "中文字体（CJK）");
+    expect(cjk?.ok).toBe(false);
+    expect(cjk?.hostAffects).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("checkDeps passes when fc-list lists a CJK font", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    const run = async (cmd: string, args: string[]) =>
+      ({ code: cmd === "fc-list" ? 0 : 1, stdout: cmd === "fc-list" ? "/usr/share/fonts/opentype/noto/NotoSansCJK.ttc: Noto Sans CJK SC" : "" });
+    const deps = await checkDeps(root, run as never);
+    expect(deps.find((d) => d.name === "中文字体（CJK）")?.ok).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("installCheck installs fonts-noto-cjk via apt for CJK fonts", async () => {
+    const root = tmpRoot();
+    let called = "";
+    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "" }; };
+    const dep = { name: "中文字体（CJK）", ok: false, hostAffects: true, action: "apt" };
+    const ok = await installCheck(root, dep, run as never);
+    expect(ok).toBe(true);
+    expect(called).toBe("apt-get install -y fonts-noto-cjk");
+    rmSync(root, { recursive: true, force: true });
   });
 });

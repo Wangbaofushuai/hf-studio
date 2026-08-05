@@ -197,6 +197,12 @@ function checkKey(root: string): boolean {
   }
 }
 
+/** 中文字体检测：fc-list :lang=zh 有输出即视为可用（缺失时视频中文渲染成方块字） */
+export async function hasCjkFont(run: CmdRunner = defaultRunner): Promise<boolean> {
+  const r = await run("fc-list", [":lang=zh"]);
+  return r.code === 0 && r.stdout.trim().length > 0;
+}
+
 export async function checkDeps(root: string, run: CmdRunner = defaultRunner): Promise<DepCheck[]> {
   const hasChrome = existsSync(join(process.env.HOME ?? "", ".cache", "hyperframes", "chrome"));
   return [
@@ -222,6 +228,11 @@ export async function checkDeps(root: string, run: CmdRunner = defaultRunner): P
       action: "hyperframes browser ensure（下载到 ~/.cache，用户级缓存）",
     },
     {
+      name: "中文字体（CJK）", ok: await hasCjkFont(run), hostAffects: true,
+      action: "apt-get install -y fonts-noto-cjk（系统级安装，需 root）",
+      detail: "缺失时视频中文渲染为方块字，建议安装",
+    },
+    {
       name: "LLM key",
       ok: checkKey(root), hostAffects: false,
       action: "编辑 server/config.json 填入真实 apiKey，或在前端「自定义模型渠道」填写",
@@ -244,6 +255,8 @@ export async function installCheck(root: string, check: DepCheck, run: CmdRunner
       const bin = join(root, "server", "node_modules", ".bin", "hyperframes");
       return (await run(bin, ["browser", "ensure"], { cwd: join(root, "server") })).code === 0;
     }
+    case "中文字体（CJK）":
+      return (await run("apt-get", ["install", "-y", "fonts-noto-cjk"])).code === 0;
     case "bun":
       return (await run("bash", ["-c", "curl -fsSL https://bun.sh/install | bash"])).code === 0;
     default:
