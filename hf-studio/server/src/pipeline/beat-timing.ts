@@ -37,6 +37,19 @@ export function buildBeatBoundaries(
   return boundaries;
 }
 
+/** 真实时长边界：把 ffprobe 实测的各 beat 秒数逐段累加，并插入固定间隙。
+ *  区别于 buildBeatBoundaries（词级时间戳末尾，偏短），这里用真实音频时长，
+ *  保证"视频比配音先结束"不再发生。单元素（最后一 beat）不追加尾间隙。 */
+export function buildRealBoundaries(realSecs: number[], gapSec: number): Boundary[] {
+  const boundaries: Boundary[] = [];
+  let cursor = 0;
+  realSecs.forEach((sec, i) => {
+    boundaries.push({ index: i + 1, startSec: cursor, endSec: cursor + sec });
+    cursor += sec + (i < realSecs.length - 1 ? gapSec : 0);
+  });
+  return boundaries;
+}
+
 export function flattenTranscript(
   wordsPerBeat: { words: { text: string; start: number; end: number }[] }[],
 ): { text: string; start: number; end: number }[] {

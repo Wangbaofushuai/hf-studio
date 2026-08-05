@@ -38,15 +38,25 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
     ...(ctx.config.materials.audio ? [`assets/${ctx.config.materials.audio} (audio)`] : []),
   ].join("\n");
 
-  // 1) root index.html
-  const totalSec = timedBeats.at(-1)?.endSec ?? ctx.config.durationSec;
+  // 1) root index.html：软目标收尾。真实总长（step3 实测边界末尾）若短于目标时长，
+  //    则把末 beat 结束点补齐到 target（留固定下限 0.6s），让视频撑住直到配音放完；
+  //    若视频已拼过目标（totalReal > target），则保留实测并仅加下限，绝不让视频提前结束。
+  const totalReal = boundaries.at(-1)?.endSec ?? 0;
+  const target = ctx.config.durationSec;
+  const tailHold = Math.max(0.6, Math.min(target - totalReal, target * 0.5));
+  if (tailHold > 0 && timedBeats.length > 0) {
+    timedBeats[timedBeats.length - 1].endSec = totalReal + tailHold;
+  }
+  const finalEndSec = timedBeats.at(-1)?.endSec ?? target;
+
   const indexHtml = generateRootHtml({
     beats: timedBeats.map((b) => ({ id: b.id, startSec: b.startSec, endSec: b.endSec })),
     format: ctx.config.format,
-    totalSec,
+    totalSec: finalEndSec,
     voiceover: ctx.config.voiceover,
     bgm: ctx.config.materials.audio,
     language: ctx.config.language,
+    finalEndSec,
   });
   writeFileSync(join(ctx.projectDir, "index.html"), indexHtml);
 
@@ -134,7 +144,7 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
   return {
     status: "passed",
     artifacts: ["index.html", ...built.map((b) => b.file)],
-    data: { beats: built },
-    log: `构建完成：${built.length} 个片段`,
+    data: { beats: built, finalEndSec },
+    log: `构建完成：${built.length} 个片段，总时长 ${finalEndSec.toFixed(1)}s`,
   };
 };

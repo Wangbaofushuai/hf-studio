@@ -67,6 +67,32 @@ function makeCtxWithLint(lint: () => Promise<{
   return { ctx, prev, lintCalls: () => lintCalls };
 }
 
+/** 可定制 durationSec 与 boundaries 的构建 ctx（用于软目标收尾测试） */
+function makeCtxForBoundaries(durationSec: number, boundaries: { index: number; startSec: number; endSec: number }[]) {
+  const llm = new LlmGateway(mockProviders, {
+    transport: mockTransport(async (_p, body) => {
+      const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
+      const m = userMsg.match(/beat-(\d+)/);
+      const id = m ? `beat-${m[1]}` : "beat-1";
+      return { content: BEAT_HTML(id) };
+    }),
+  });
+  const dir = mkdtempSync(join(tmpdir(), "hf-step4t-"));
+  writeFileSync(join(dir, "DESIGN.md"), "# DESIGN\n## Visual Theme\n暗色\n## Quick Reference\n#000 #fff\n## Component Stylings\n标题 80px\n## Spacing & Layout\n网格\n## Iteration Guide\n克制");
+  const render = { lint: async () => ({ ok: true, errorCount: 0, findings: [] as unknown[] }) };
+  const prev: StepOutput[] = [
+    { step: 0, status: "passed", artifacts: [], data: {}, log: "", attempts: 1 },
+    { step: 1, status: "passed", artifacts: [], data: { design: "# DESIGN" }, log: "", attempts: 1 },
+    { step: 2, status: "passed", artifacts: [], data: { storyboard: { beats: [{ id: "beat-1", narration: "a", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 4 }, { id: "beat-2", narration: "b", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 4 }] } }, log: "", attempts: 1 },
+    { step: 3, status: "passed", artifacts: [], data: { boundaries }, log: "", attempts: 1 },
+  ];
+  const ctx = {
+    jobId: "j1", projectDir: dir, config: { ...cfg, durationSec },
+    llm, render, feedback: null, log: () => {},
+  } as unknown as StepContext;
+  return { ctx, prev };
+}
+
 describe("step4Build", () => {
   test("generates index.html and one composition per beat with lint passing", async () => {
     const { ctx, prev } = makeCtx(0);
@@ -81,11 +107,15 @@ describe("step4Build", () => {
     const built = r.data.beats as { id: string; startSec: number; endSec: number }[];
     expect(built).toHaveLength(2);
     expect(built[0]).toMatchObject({ id: "beat-1", startSec: 0, endSec: 4.2 });
-    expect(built[1]).toMatchObject({ id: "beat-2", startSec: 4.2, endSec: 9 });
-    // index.html 引用两个 beat 槽位
+    // 软目标收尾：totalReal=9、target=9 → tailHold=max(0.6, min(0,4.5))=0.6 → 末 beat 补到 9.6
+    expect(built[1]).toMatchObject({ id: "beat-2", startSec: 4.2, endSec: 9.6 });
+    expect(r.data.finalEndSec).toBeCloseTo(9.6, 1);
+    // index.html 引用两个 beat 槽位，root/narration 总时长用 finalEndSec(9.6)
     const indexHtml = readFileSync(join((ctx as any).projectDir, "index.html"), "utf8");
     expect(indexHtml).toContain('data-composition-src="compositions/beat-1.html"');
     expect(indexHtml).toContain('data-composition-src="compositions/beat-2.html"');
+    expect(indexHtml).toContain('data-duration="9.6"');
+    expect(indexHtml).toContain('id="narration"');
   });
 
   test("lint failure returns gate_failed with lint errors", async () => {
@@ -179,5 +209,44 @@ describe("step4Build", () => {
     expect(written.startsWith("```")).toBe(false);
     expect(written.startsWith("<!doctype html>")).toBe(true);
     expect(written).not.toContain("```");
+  });
+
+  test("soft-target tail hold: short real total extends last beat to target", async () => {
+    // totalReal=40, target=60 → tailHold=min(20,30)=20 → 末 beat endSec = 40+20 = 60
+    const { ctx, prev } = makeCtxForBoundaries(60, [
+      { index: 1, startSec: 0, endSec: 20 },
+      { index: 2, startSec: 20, endSec: 40 },
+    ]);
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("passed");
+    const last = (r.data.beats as { id: string; endSec: number }[]).at(-1)!;
+    expect(last.endSec).toBeCloseTo(60, 1);
+    expect(r.data.finalEndSec).toBeCloseTo(60, 1);
+  });
+
+  test("soft-target tail hold: real total already over target keeps +0.6s", async () => {
+    // totalReal=70 > target=60 → min(-10, 30) 为负 → tailHold=0.6 → 末 beat endSec = 70.6
+    const { ctx, prev } = makeCtxForBoundaries(60, [
+      { index: 1, startSec: 0, endSec: 30 },
+      { index: 2, startSec: 30, endSec: 70 },
+    ]);
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("passed");
+    const last = (r.data.beats as { id: string; endSec: number }[]).at(-1)!;
+    expect(last.endSec).toBeCloseTo(70.6, 1);
+    expect(r.data.finalEndSec).toBeCloseTo(70.6, 1);
+  });
+
+  test("soft-target tail hold: slightly short real total rounds up to target", async () => {
+    // totalReal=14, target=15 → min(1, 7.5)=1 → 末 beat endSec = 14+1 = 15
+    const { ctx, prev } = makeCtxForBoundaries(15, [
+      { index: 1, startSec: 0, endSec: 7 },
+      { index: 2, startSec: 7, endSec: 14 },
+    ]);
+    const r = await step4Build(ctx, prev);
+    expect(r.status).toBe("passed");
+    const last = (r.data.beats as { id: string; endSec: number }[]).at(-1)!;
+    expect(last.endSec).toBeCloseTo(15, 1);
+    expect(r.data.finalEndSec).toBeCloseTo(15, 1);
   });
 });

@@ -10,9 +10,11 @@ export function generateRootHtml(opts: {
   voiceover: boolean;
   bgm: string | null;
   language: string;
+  finalEndSec?: number;   // 软目标收尾后的最终总时长；覆盖 root 与 audio 的 data-duration
 }): string {
   const { w, h } = RESOLUTIONS[opts.format];
   const fmt = (n: number) => String(Number(n.toFixed(2))); // 去掉尾随 0：4.20 → 4.2
+  const dur = opts.finalEndSec ?? opts.totalSec;
   const slots = opts.beats
     .map((b) => {
       // 时长必须从舍入后的 start/end 推导，保证相邻槽位严格邻接：
@@ -26,10 +28,10 @@ export function generateRootHtml(opts: {
     })
     .join("\n");
   const narration = opts.voiceover
-    ? `      <audio id="narration" src="assets/narration.wav" data-start="0" data-duration="${fmt(opts.totalSec)}" data-track-index="10" data-volume="1"></audio>\n`
+    ? `      <audio id="narration" src="assets/narration.wav" data-start="0" data-duration="${fmt(dur)}" data-track-index="10" data-volume="1"></audio>\n`
     : "";
   const bgm = opts.bgm
-    ? `      <audio id="bgm" src="${opts.bgm}" data-start="0" data-duration="${fmt(opts.totalSec)}" data-track-index="9" data-volume="0.2"></audio>\n`
+    ? `      <audio id="bgm" src="${opts.bgm}" data-start="0" data-duration="${fmt(dur)}" data-track-index="9" data-volume="0.2"></audio>\n`
     : "";
   return `<!doctype html>
 <html lang="${opts.language}" data-resolution="${opts.format}">
@@ -43,7 +45,7 @@ export function generateRootHtml(opts: {
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="root" data-start="0" data-duration="${fmt(opts.totalSec)}" data-width="${w}" data-height="${h}">
+    <div id="root" data-composition-id="root" data-start="0" data-duration="${fmt(dur)}" data-width="${w}" data-height="${h}">
 ${narration}${bgm}${slots}
     </div>
     <script>

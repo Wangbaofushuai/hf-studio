@@ -67,6 +67,10 @@ describe("step3Tts", () => {
     const ctx = {
       jobId: "j1", projectDir: dir, config: cfg,
       tts, feedback: null, log: () => {},
+      // 注入 ffprobe mock：beat-1 实测 0.9s，beat-2 实测 1.1s（真实时长，可能 ≠ TTS 返回的 durationSec）
+      _probeMedia: async (wav: string) => wav.includes("beat-1")
+        ? { durationSec: 0.9, hasAudio: true, hasVideo: false }
+        : { durationSec: 1.1, hasAudio: true, hasVideo: false },
     } as unknown as StepContext;
     const r = await step3Tts(ctx, prev);
     expect(r.status).toBe("passed");
@@ -74,8 +78,11 @@ describe("step3Tts", () => {
     expect(existsSync(join(dir, "assets", "narration.wav"))).toBe(true);
     const boundaries = r.data.boundaries as { index: number; startSec: number; endSec: number }[];
     expect(boundaries).toHaveLength(2);
-    expect(boundaries[1].startSec).toBeCloseTo(0.9, 1);
-    expect(boundaries[1].endSec).toBeCloseTo(2.0, 1);
+    // 真实边界：start = 上一 end + 0.25 间隙；end = start + 实测秒数
+    expect(boundaries[0]).toMatchObject({ startSec: 0, endSec: 0.9 });
+    expect(boundaries[1].startSec).toBeCloseTo(0.9 + 0.25, 1);
+    expect(boundaries[1].endSec).toBeCloseTo(0.9 + 0.25 + 1.1, 1); // 2.25
+    expect(r.data.realTotalSec).toBeCloseTo(2.25, 1);
   });
 
   test("voiceover: audio duration deviating >30% from estimate returns gate_failed", async () => {
@@ -105,6 +112,10 @@ describe("step3Tts", () => {
     const ctx = {
       jobId: "j1", projectDir: dir, config: cfg,
       tts, feedback: null, log: () => {},
+      // ffprobe mock：实测合计 2.25s（0.9+0.25+1.1），与字数估算 4.5s 偏差 50% > 30% → 门用 realTotal 判失败
+      _probeMedia: async (wav: string) => wav.includes("beat-1")
+        ? { durationSec: 0.9, hasAudio: true, hasVideo: false }
+        : { durationSec: 1.1, hasAudio: true, hasVideo: false },
     } as unknown as StepContext;
     const r = await step3Tts(ctx, prev);
     expect(r.status).toBe("gate_failed");
