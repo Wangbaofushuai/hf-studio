@@ -47,16 +47,19 @@
 cd hf-studio/server && bun install
 cd hf-studio/web && bun install
 
-# 2. 配置 LLM 渠道
-cd hf-studio/server
-cp config.example.json config.json   # 然后编辑，填入真实 apiKey
+# 2. 启动后打开网页「模型渠道」页（/channels）填写 Key：
+#    预设 DeepSeek / 智谱 GLM / 通义 Qwen / OpenAI / Kimi，填入各自 API Key 即用；
+#    自定义渠道可自填 BaseURL 与模型。Key 存 data/channels.json（gitignored，不回显）。
+#    （也支持直接编辑 data/channels.json；旧版 config.json 的 providers 会自动迁移）
 ```
 
-`config.json`（gitignored，不入库）结构：
+`server/config.json`（gitignored，不入库）只放预设渠道定义（无 Key），默认模型可选：
 
 ```json
 {
-  "providers": [{ "id": "deepseek", "baseURL": "https://api.deepseek.com/v1", "apiKey": "sk-...", "models": ["deepseek-chat"] }],
+  "presetChannels": [
+    { "id": "deepseek", "name": "DeepSeek", "baseURL": "https://api.deepseek.com/v1", "models": ["deepseek-chat", "deepseek-v4-flash"], "thinking": "disabled" }
+  ],
   "defaults": { "model": "deepseek/deepseek-chat", "judgeModel": "deepseek/deepseek-chat", "judgeThreshold": 7 },
   "tts": { "defaultVoice": "zh-CN-XiaoxiaoNeural", "defaultLanguage": "zh-CN" }
 }
@@ -71,7 +74,7 @@ bun run dev:web      # 前端 :5173（绑 0.0.0.0），/api 自动代理到 8787
 #    需云安全组放行 5173/8787；用 `vd` 启动会在菜单里显示公网地址）
 ```
 
-不配内置渠道也能用：前端「模型配置」里可直接填自定义渠道（名称 / BaseURL / Key / 模型列表），随任务提交、按任务生效。
+不配内置渠道也能用：新建任务页的「临时自定义渠道」（折叠区）可直接填 名称/BaseURL/Key/模型列表，随任务提交、按任务生效；长期使用建议在「模型渠道」页保存。
 
 ## 运行测试
 

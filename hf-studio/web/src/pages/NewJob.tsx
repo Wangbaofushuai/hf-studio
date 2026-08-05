@@ -1,37 +1,60 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { createJob } from "../api";
-import ModelSelect from "../components/ModelSelect";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { createJob, fetchChannels } from "../api";
+import type { ChannelsDto } from "../types";
 import VoiceSelect from "../components/VoiceSelect";
+
+const FORMATS = [
+  { id: "portrait", label: "竖屏 9:16" },
+  { id: "landscape", label: "横屏 16:9" },
+  { id: "square", label: "方形 1:1" },
+] as const;
 
 export default function NewJob() {
   const nav = useNavigate();
   const [idea, setIdea] = useState("");
   const [durationSec, setDurationSec] = useState(15);
-  const [format, setFormat] = useState<"landscape" | "portrait" | "square">("portrait");
+  const [format, setFormat] = useState<"portrait" | "landscape" | "square">("portrait");
   const [voiceover, setVoiceover] = useState(true);
   const [voice, setVoice] = useState("zh-CN-XiaoxiaoNeural");
   const [language, setLanguage] = useState("zh-CN");
+  const [channelId, setChannelId] = useState("");
   const [model, setModel] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // 自定义渠道（BYOK，可选）
-  const [channelId, setChannelId] = useState("");
-  const [baseURL, setBaseURL] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [channelModels, setChannelModels] = useState("");
+  const [cat, setCat] = useState<ChannelsDto | null>(null);
+  // 临时自定义渠道（BYOK，折叠区）
+  const [tmpOpen, setTmpOpen] = useState(false);
+  const [tmpId, setTmpId] = useState("");
+  const [tmpBase, setTmpBase] = useState("");
+  const [tmpKey, setTmpKey] = useState("");
+  const [tmpModels, setTmpModels] = useState("");
 
-  const extraProviders = channelId && baseURL && apiKey && channelModels
-    ? [{ id: channelId, models: channelModels.split(",").map((m) => m.trim()).filter(Boolean) }]
+  useEffect(() => {
+    fetchChannels().then(setCat).catch(() => setCat({ presets: [], custom: [] }));
+  }, []);
+
+  const available = cat
+    ? [...cat.presets.filter((p) => p.hasKey), ...cat.custom.filter((c) => c.hasKey)]
     : [];
+  const selected = available.find((c) => c.id === channelId) ?? null;
+
+  // 选中渠道后默认其首个模型
+  useEffect(() => {
+    if (selected && !model.startsWith(`${selected.id}/`)) setModel(`${selected.id}/${selected.models[0]}`);
+  }, [channelId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError("");
-    // 自定义渠道填了且未选其模型时，默认用渠道首个模型
-    const customModels = channelModels.split(",").map((m) => m.trim()).filter(Boolean);
-    const finalModel = model || (extraProviders.length > 0 ? `${channelId}/${customModels[0]}` : "");
+    const customModels = tmpModels.split(",").map((m) => m.trim()).filter(Boolean);
+    const finalModel = model || (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0 ? `${tmpId}/${customModels[0]}` : "");
+    if (!finalModel) {
+      setError("请选择一个模型渠道并填写 Key（或展开「临时自定义渠道」）");
+      setBusy(false);
+      return;
+    }
     const form = new FormData();
     form.set("idea", idea);
     form.set("durationSec", String(durationSec));
@@ -40,8 +63,8 @@ export default function NewJob() {
     form.set("voice", voice);
     form.set("language", language);
     form.set("model", finalModel);
-    if (extraProviders.length > 0) {
-      form.set("providers", JSON.stringify([{ id: channelId, baseURL, apiKey, models: customModels }]));
+    if (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0) {
+      form.set("providers", JSON.stringify([{ id: tmpId, baseURL: tmpBase, apiKey: tmpKey, models: customModels }]));
     }
     for (const f of files) form.append("files", f);
     try {
@@ -54,76 +77,125 @@ export default function NewJob() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
-      <h2 className="text-xl font-semibold">新建视频任务</h2>
-      <div>
-        <label className="block text-sm text-neutral-400 mb-1">你的想法（必填）</label>
+    <form onSubmit={submit} className="space-y-8">
+      <header>
+        <h2 className="text-2xl font-semibold tracking-tight">新建视频任务</h2>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">输入想法与素材，交给流水线生成你的视频。</p>
+      </header>
+
+      <section className="glass space-y-3 p-6">
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">你的想法</label>
         <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={4} required
-          placeholder="例如：用三句话讲清太阳能发电的原理，风格偏科技感"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm text-neutral-400 mb-1">时长（秒）</label>
-          <input type="number" min={5} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-400 mb-1">画幅</label>
-          <select value={format} onChange={(e) => setFormat(e.target.value as typeof format)} className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm">
-            <option value="portrait">竖屏 9:16（1080×1920）</option>
-            <option value="landscape">横屏 16:9（1920×1080）</option>
-            <option value="square">方形 1:1（1080×1080）</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-400 mb-1">配音</label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={voiceover} onChange={(e) => setVoiceover(e.target.checked)} />
-            {voiceover ? "开启（Edge-TTS 配音）" : "关闭（纯视觉）"}
-          </label>
-        </div>
-        {voiceover && (
+          placeholder="例如：用三句话讲清楚太阳能发电的原理，风格偏科技感"
+          className="input resize-none" />
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm text-neutral-400 mb-1">音色</label>
-            <VoiceSelect lang={language} value={voice} onChange={setVoice} />
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">时长（秒）</label>
+            <div className="segmented">
+              {[10, 15, 30].map((s) => (
+                <button key={s} type="button" data-active={durationSec === s} onClick={() => setDurationSec(s)}>{s}s</button>
+              ))}
+            </div>
+            <input type="number" min={5} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))} className="input mt-2" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">画幅</label>
+            <div className="segmented">
+              {FORMATS.map((f) => (
+                <button key={f.id} type="button" data-active={format === f.id} onClick={() => setFormat(f.id)}>{f.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">配音</label>
+            <div className="segmented">
+              <button type="button" data-active={voiceover} onClick={() => setVoiceover(true)}>开启</button>
+              <button type="button" data-active={!voiceover} onClick={() => setVoiceover(false)}>关闭</button>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">旁白语言</label>
+            <select value={language} onChange={(e) => setLanguage(e.target.value)} className="input">
+              <option value="zh-CN">中文（zh-CN）</option>
+              <option value="en-US">英语（en-US）</option>
+              <option value="ja-JP">日语（ja-JP）</option>
+            </select>
+          </div>
+          {voiceover && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">音色</label>
+              <VoiceSelect lang={language} value={voice} onChange={setVoice} />
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="glass space-y-3 p-6">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">模型渠道</label>
+          <Link to="/channels" className="text-xs text-[#0071e3] hover:underline">管理渠道 →</Link>
+        </div>
+        {available.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-black/10 p-6 text-center dark:border-white/10">
+            <p className="text-sm text-neutral-500">还没有可用的模型渠道</p>
+            <Link to="/channels" className="btn-primary mt-3 inline-block">去配置 Key</Link>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {available.map((c) => (
+              <button key={c.id} type="button" onClick={() => setChannelId(c.id)}
+                className={`rounded-xl border p-4 text-left transition-all ${
+                  channelId === c.id
+                    ? "border-[#0071e3] bg-[#0071e3]/5 shadow-md shadow-blue-500/10"
+                    : "border-black/10 bg-white/50 hover:border-black/20 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/25"
+                }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{c.name}</span>
+                  <span className={`h-2.5 w-2.5 rounded-full ${channelId === c.id ? "bg-[#0071e3]" : "bg-green-500"}`} />
+                </div>
+                <p className="mt-1 truncate font-mono text-[11px] text-neutral-400">{c.baseURL}</p>
+                <p className="mt-1 text-[11px] text-neutral-400">{c.models.length} 个模型</p>
+              </button>
+            ))}
           </div>
         )}
-        <div>
-          <label className="block text-sm text-neutral-400 mb-1">LLM 模型</label>
-          <ModelSelect value={model} onChange={setModel} extraProviders={extraProviders} />
-        </div>
-        <div>
-          <label className="block text-sm text-neutral-400 mb-1">旁白语言</label>
-          <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm">
-            <option value="zh-CN">中文（zh-CN）</option>
-            <option value="en-US">英语（en-US）</option>
-            <option value="ja-JP">日语（ja-JP）</option>
-          </select>
-        </div>
-      </div>
-      <div className="rounded-md border border-dashed border-neutral-700 p-4">
-        <h3 className="text-sm font-semibold mb-2">自定义模型渠道（可选，BYOK）</h3>
-        <p className="mb-3 text-xs text-neutral-500">填写后本任务使用你自己的 API 渠道，不填则用服务端内置渠道</p>
-        <div className="grid grid-cols-2 gap-3">
-          <input value={channelId} onChange={(e) => setChannelId(e.target.value)} placeholder="渠道名，如 mykey"
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-          <input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="BaseURL，如 https://api.deepseek.com/v1"
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-          <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" placeholder="API Key"
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-          <input value={channelModels} onChange={(e) => setChannelModels(e.target.value)} placeholder="模型列表，逗号分隔，如 deepseek-v4-flash"
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm text-neutral-400 mb-1">素材（可选：图片 / 背景音乐）</label>
-        <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,audio/mpeg,audio/wav" onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-          className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm" />
-        {files.length > 0 && <ul className="mt-2 text-xs text-neutral-400">{files.map((f) => <li key={f.name}>{f.name}</li>)}</ul>}
-      </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      <button type="submit" disabled={busy} className="rounded-md bg-blue-600 px-6 py-2 text-sm font-semibold hover:bg-blue-500 disabled:opacity-50">
+        {selected && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">模型</label>
+            <select value={model} onChange={(e) => setModel(e.target.value)} className="input">
+              {selected.models.map((m) => <option key={m} value={`${selected.id}/${m}`}>{selected.id}/{m}</option>)}
+            </select>
+          </div>
+        )}
+
+        <details open={tmpOpen} onToggle={(e) => setTmpOpen(e.currentTarget.open)} className="rounded-xl border border-dashed border-black/10 p-4 dark:border-white/10">
+          <summary className="cursor-pointer text-sm text-neutral-500">临时自定义渠道（不保存，仅本次任务使用）</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <input className="input" placeholder="渠道名，如 mykey" value={tmpId} onChange={(e) => setTmpId(e.target.value)} />
+            <input className="input" placeholder="BaseURL，如 https://api.example.com/v1" value={tmpBase} onChange={(e) => setTmpBase(e.target.value)} />
+            <input className="input" type="password" placeholder="API Key" value={tmpKey} onChange={(e) => setTmpKey(e.target.value)} autoComplete="off" />
+            <input className="input" placeholder="模型列表，逗号分隔" value={tmpModels} onChange={(e) => setTmpModels(e.target.value)} />
+          </div>
+        </details>
+      </section>
+
+      <section className="glass space-y-3 p-6">
+        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">素材（可选：图片 / 背景音乐）</label>
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 py-8 text-neutral-400 transition-colors hover:border-[#0071e3]/50 dark:border-white/15">
+          <span className="text-2xl">＋</span>
+          <span className="text-sm">点击选择或拖拽图片 / 音频到此处</span>
+          <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,audio/mpeg,audio/wav"
+            className="hidden" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+        </label>
+        {files.length > 0 && (
+          <ul className="flex flex-wrap gap-2">
+            {files.map((f) => <li key={f.name} className="rounded-lg bg-black/[0.05] px-2.5 py-1 text-xs text-neutral-600 dark:bg-white/10 dark:text-neutral-300">{f.name}</li>)}
+          </ul>
+        )}
+      </section>
+
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <button type="submit" disabled={busy} className="btn-primary w-full py-3 text-base">
         {busy ? "提交中…" : "生成视频"}
       </button>
     </form>

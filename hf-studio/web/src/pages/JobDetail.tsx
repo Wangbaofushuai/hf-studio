@@ -37,40 +37,45 @@ export default function JobDetail() {
   const { job, steps } = detail;
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">{job.config.idea}</h2>
-          <p className="text-xs text-neutral-400">状态：{STATUS_LABEL[job.status] ?? job.status}{job.error ? ` · ${job.error}` : ""}</p>
+      <header className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-2xl font-semibold tracking-tight">{job.config.idea}</h2>
+          <p className="mt-1 text-xs text-neutral-400">
+            {STATUS_LABEL[job.status] ?? job.status}{job.error ? ` · ${job.error}` : ""} · 创建于 {new Date(job.createdAt).toLocaleString("zh-CN")}
+          </p>
         </div>
-        <span className="text-xs text-neutral-500">创建于 {new Date(job.createdAt).toLocaleString("zh-CN")}</span>
+      </header>
+
+      <div className="glass p-4">
+        <ProgressSteps steps={steps} currentStep={job.currentStep} />
       </div>
 
-      <ProgressSteps steps={steps} currentStep={job.currentStep} />
-
-      <div>
-        <h3 className="text-sm font-semibold mb-2">步骤时间线</h3>
+      <section className="glass p-5">
+        <h3 className="mb-3 text-sm font-semibold">步骤时间线</h3>
         <ul className="space-y-2">
           {steps.map((s) => (
-            <li key={s.step} className="rounded-md border border-neutral-800 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm">第 {s.step + 1} 步 · {s.log}</span>
-                <button onClick={() => onRerun(s.step)} className="rounded bg-neutral-800 px-3 py-1 text-xs hover:bg-neutral-700">重新生成此步</button>
+            <li key={s.step} className="rounded-xl border border-black/[0.06] bg-white/50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm">{s.log}</span>
+                <button onClick={() => onRerun(s.step)} className="btn-secondary shrink-0 !px-3 !py-1 text-xs">重新生成此步</button>
               </div>
-              {s.error && <p className="mt-1 text-xs text-red-400">{s.error}</p>}
-              {s.judge && <p className="mt-1 text-xs text-amber-400">评审 {s.judge.score} 分：{s.judge.feedback}</p>}
+              {s.error && <p className="mt-1 text-xs text-red-500">{s.error}</p>}
+              {s.judge && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">评审 {s.judge.score} 分：{s.judge.feedback}</p>}
             </li>
           ))}
           {steps.length === 0 && <li className="text-sm text-neutral-500">等待执行…</li>}
         </ul>
-      </div>
+      </section>
 
-      <ArtifactPanel jobId={id} steps={steps} />
+      <section className="glass p-5">
+        <ArtifactPanel jobId={id} steps={steps} />
+      </section>
 
       {logs.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">实时日志</h3>
-          <pre className="max-h-48 overflow-auto rounded-md bg-neutral-900 p-3 text-xs text-neutral-400">{logs.join("\n")}</pre>
-        </div>
+        <section className="glass p-5">
+          <h3 className="mb-2 text-sm font-semibold">实时日志</h3>
+          <pre className="max-h-48 overflow-auto rounded-xl bg-black/[0.04] p-3 text-xs text-neutral-500 dark:bg-black/40 dark:text-neutral-400">{logs.join("\n")}</pre>
+        </section>
       )}
     </div>
   );

@@ -10,3 +10,5 @@ export interface StepOutputDto { step: number; status: string; artifacts: string
 export interface JobDetailDto { job: JobDto; steps: StepOutputDto[]; artifacts: string[] }
 export interface ModelsDto { providers: { id: string; models: string[] }[]; default: string }
 export interface VoiceDto { shortName: string; gender: string; locale: string }
+export interface ChannelDto { id: string; name: string; baseURL: string; models: string[]; hasKey: boolean; thinking?: "enabled" | "disabled" }
+export interface ChannelsDto { presets: ChannelDto[]; custom: ChannelDto[] }
