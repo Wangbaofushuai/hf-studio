@@ -16,13 +16,20 @@ export const fetchVoices = (lang = "zh-CN") => j<{ voices: VoiceDto[] }>(fetch(`
 
 // ── 模型渠道管理 ──
 export const fetchChannels = () => j<ChannelsDto>(fetch("/api/channels"));
-export const saveChannel = (id: string, body: { apiKey: string; baseURL?: string; models?: string[] }) =>
+export const saveChannel = (id: string, body: { apiKey?: string; baseURL?: string; models?: string[] }) =>
   j<ChannelsDto>(fetch(`/api/channels/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
 export const deleteChannel = (id: string) => j<ChannelsDto>(fetch(`/api/channels/${id}`, { method: "DELETE" }));
 export const testChannel = async (id: string): Promise<{ ok: boolean; latencyMs?: number; error?: string }> => {
   const r = await fetch(`/api/channels/${id}/test`);
   return r.json() as Promise<{ ok: boolean; latencyMs?: number; error?: string }>;
 };
+/** 获取渠道模型列表（Key 刚填时传 key，否则用已存的） */
+export const fetchChannelModels = (id: string, apiKey?: string) =>
+  j<{ models: string[] }>(fetch(`/api/channels/${id}/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(apiKey ? { apiKey } : {}),
+  }));
 
 export function subscribeJob(id: string, onEvent: (e: unknown) => void): () => void {
   const es = new EventSource(`/api/jobs/${id}/events`);

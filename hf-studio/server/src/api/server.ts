@@ -7,7 +7,7 @@ import type { AppConfig } from "../config";
 import type { TtsService } from "../tts/service";
 import type { StepId, JobConfig, LlmProvider } from "../types";
 import { LlmGateway } from "../llm/gateway";
-import { buildProviders, channelCatalog, deleteChannelKey, loadChannelKeys, saveChannelKey, type ChannelKeys } from "../channels";
+import { buildProviders, channelCatalog, deleteChannelKey, fetchChannelModels, loadChannelKeys, saveChannelKey, type ChannelKeys } from "../channels";
 
 const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 const ALLOWED_AUDIO = ["audio/mpeg", "audio/wav", "audio/mp4", "audio/x-wav"];
@@ -179,15 +179,19 @@ export function createServer(opts: {
     const id = c.req.param("id");
     const preset = opts.config.presetChannels.find((p) => p.id === id);
     if (!preset) return c.json({ error: "未知渠道" }, 404);
+    const keys = chStore.load();
     const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string; baseURL?: string; models?: string[] };
-    if (!body.apiKey || typeof body.apiKey !== "string") return c.json({ error: "apiKey 不能为空" }, 400);
+    // Key 可缺省（仅更新模型时）；但至少要有一个可用 key
+    const finalKey = body.apiKey ?? keys[id]?.apiKey;
+    if (!finalKey || typeof finalKey !== "string") return c.json({ error: "apiKey 不能为空" }, 400);
+    const models = Array.isArray(body.models) ? body.models.filter((m): m is string => typeof m === "string" && m.length > 0) : undefined;
     if (id === "custom") {
-      if (!body.baseURL || !Array.isArray(body.models) || body.models.length === 0) {
+      if (!body.baseURL || !models || models.length === 0) {
         return c.json({ error: "自定义渠道需要 baseURL 与至少一个模型" }, 400);
       }
-      chStore.save(id, { apiKey: body.apiKey, baseURL: body.baseURL, models: body.models });
+      chStore.save(id, { apiKey: finalKey, baseURL: body.baseURL, models });
     } else {
-      chStore.save(id, { apiKey: body.apiKey });
+      chStore.save(id, { apiKey: finalKey, ...(models ? { models } : {}) });
     }
     return c.json(channelCatalog(opts.config.presetChannels, chStore.load()));
   });
@@ -217,6 +221,25 @@ export function createServer(opts: {
       return c.json({ ok: true, latencyMs: Date.now() - started, content: r.content.slice(0, 20) });
     } catch (e) {
       return c.json({ ok: false, latencyMs: Date.now() - started, error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  // 获取渠道模型列表（用刚填或已存的 Key 调 OpenAI 兼容 /models 接口）
+  app.post("/api/channels/:id/models", async (c) => {
+    const id = c.req.param("id");
+    const preset = opts.config.presetChannels.find((p) => p.id === id);
+    if (!preset) return c.json({ error: "未知渠道" }, 404);
+    const keys = chStore.load();
+    const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string };
+    const apiKey = body.apiKey ?? keys[id]?.apiKey;
+    if (!apiKey) return c.json({ error: "请先填写 Key" }, 400);
+    const baseURL = id === "custom" ? keys.custom?.baseURL : preset.baseURL;
+    if (!baseURL) return c.json({ error: "自定义渠道缺少 baseURL" }, 400);
+    try {
+      const models = await fetchChannelModels(baseURL, apiKey);
+      return c.json({ models });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 502);
     }
   });
 

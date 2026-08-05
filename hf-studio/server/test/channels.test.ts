@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildProviders, channelCatalog, deleteChannelKey, hasAnyKey, loadChannelKeys,
+  buildProviders, channelCatalog, deleteChannelKey, fetchChannelModels, hasAnyKey, loadChannelKeys,
   migrateLegacyConfig, saveChannelKey, type PresetChannel,
 } from "../src/channels";
 
@@ -44,6 +44,35 @@ describe("channels", () => {
     expect(loadChannelKeys(path)).toEqual({});
     expect(hasAnyKey({})).toBe(false);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("fetchChannelModels parses /models response and rejects bad keys", async () => {
+    // 本地假 OpenAI 兼容服务
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname !== "/v1/models") return new Response("not found", { status: 404 });
+        if (req.headers.get("Authorization") !== "Bearer sk-good") return new Response("unauthorized", { status: 401 });
+        return Response.json({ data: [{ id: "model-a" }, { id: "model-b" }, { id: "model-c" }] });
+      },
+    });
+    try {
+      const base = `http://localhost:${server.port}/v1`;
+      const models = await fetchChannelModels(base, "sk-good");
+      expect(models).toEqual(["model-a", "model-b", "model-c"]);
+      await expect(fetchChannelModels(base, "sk-bad")).rejects.toThrow(/Key 无效/);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("buildProviders prefers user-selected models over presets", () => {
+    const providers = buildProviders(presets, { deepseek: { apiKey: "sk-d", models: ["deepseek-v4-flash"] } });
+    expect(providers.find((p) => p.id === "deepseek")?.models).toEqual(["deepseek-v4-flash"]);
+    // 未自选 → 回退预设
+    const providers2 = buildProviders(presets, { glm: { apiKey: "sk-g" } });
+    expect(providers2.find((p) => p.id === "glm")?.models).toEqual(["glm-4.5"]);
   });
 
   test("migrateLegacyConfig moves keys to channels.json and rewrites config (idempotent)", () => {

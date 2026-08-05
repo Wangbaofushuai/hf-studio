@@ -146,6 +146,64 @@ describe("API", () => {
     expect(await test.json()).toMatchObject({ ok: false });
   });
 
+  test("channels: fetch models endpoint proxies OpenAI-compatible /models", async () => {
+    // 本地假 /v1/models 服务
+    const stub = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname !== "/v1/models") return new Response("not found", { status: 404 });
+        if (req.headers.get("Authorization") !== "Bearer sk-stub") return new Response("unauthorized", { status: 401 });
+        return Response.json({ data: [{ id: "stub-a" }, { id: "stub-b" }] });
+      },
+    });
+    try {
+      const stubBase = `http://localhost:${stub.port}/v1`;
+      // 保存指向假服务的自定义渠道
+      await server.fetch(new Request(`${base}/api/channels/custom`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: "sk-stub", baseURL: stubBase, models: ["stub-a"] }),
+      }));
+      const res = await server.fetch(new Request(`${base}/api/channels/custom/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ models: ["stub-a", "stub-b"] });
+      // 错误 Key
+      const bad = await server.fetch(new Request(`${base}/api/channels/custom/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: "sk-wrong" }),
+      }));
+      expect(bad.status).toBe(502);
+      const body = (await bad.json()) as { error: string };
+      expect(body.error).toContain("Key 无效");
+    } finally {
+      stub.stop(true);
+    }
+  });
+
+  test("channels: PUT without apiKey updates models only (key preserved)", async () => {
+    await server.fetch(new Request(`${base}/api/channels/fake`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-keep" }),
+    }));
+    const res = await server.fetch(new Request(`${base}/api/channels/fake`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: ["model-a", "model-b"] }),
+    }));
+    expect(res.status).toBe(200);
+    const cat = (await res.json()) as { presets: { id: string; models: string[]; hasKey: boolean }[] };
+    const fake = cat.presets.find((p) => p.id === "fake");
+    expect(fake?.hasKey).toBe(true); // key 保留
+    expect(fake?.models).toEqual(["model-a", "model-b"]); // 模型已更新
+  });
+
   test("POST /api/jobs/:id/rerun with model override replaces default model", async () => {
     const { jobs } = (await (await server.fetch(new Request(`${base}/api/jobs`))).json()) as { jobs: { id: string; config: { models: { default: string } } }[] };
     const res = await server.fetch(new Request(`${base}/api/jobs/${jobs[0].id}/rerun`, {

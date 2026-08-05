@@ -53,6 +53,20 @@ export function hasAnyKey(keys: ChannelKeys): boolean {
   return Object.values(keys).some((v) => v.apiKey && v.apiKey !== "sk-REPLACE_ME");
 }
 
+/** 从 OpenAI 兼容渠道拉取模型列表（GET /models）；Key 无效/接口异常时抛错 */
+export async function fetchChannelModels(baseURL: string, apiKey: string): Promise<string[]> {
+  const res = await fetch(`${baseURL.replace(/\/$/, "")}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (res.status === 401 || res.status === 403) throw new Error("Key 无效（401/403），请检查后重试");
+  if (!res.ok) throw new Error(`获取模型失败（HTTP ${res.status}）`);
+  const json = (await res.json()) as { data?: { id?: string }[] };
+  const models = (json.data ?? []).map((m) => m.id).filter((x): x is string => !!x);
+  if (models.length === 0) throw new Error("接口未返回模型列表（响应结构不是 OpenAI 兼容格式）");
+  return models;
+}
+
 /** 合并预设渠道定义与用户 key → 引擎可用的 providers（自定义渠道取 channels.json 完整定义） */
 export function buildProviders(presets: PresetChannel[], keys: ChannelKeys): LlmProvider[] {
   const out: LlmProvider[] = [];
@@ -64,7 +78,8 @@ export function buildProviders(presets: PresetChannel[], keys: ChannelKeys): Llm
       id: preset.id,
       baseURL: preset.baseURL,
       apiKey: k.apiKey,
-      models: preset.models,
+      // 用户自选的模型列表优先于预设（"获取模型"后保存的自选）
+      models: k.models?.length ? k.models : preset.models,
       ...(preset.thinking ? { thinking: preset.thinking } : {}),
       ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
     });
@@ -83,14 +98,18 @@ export function buildProviders(presets: PresetChannel[], keys: ChannelKeys): Llm
 
 /** 渠道目录（含 key 状态，供前端；绝不回传 key 本身） */
 export function channelCatalog(presets: PresetChannel[], keys: ChannelKeys) {
-  const presetsView = presets.map((p) => ({
-    id: p.id,
-    name: p.name,
-    baseURL: p.baseURL,
-    models: p.models,
-    thinking: p.thinking,
-    hasKey: !!(keys[p.id]?.apiKey && keys[p.id]!.apiKey !== "sk-REPLACE_ME"),
-  }));
+  const presetsView = presets.map((p) => {
+    const k = keys[p.id];
+    return {
+      id: p.id,
+      name: p.name,
+      baseURL: p.baseURL,
+      // 生效模型 = 用户自选 ?? 预设
+      models: k?.models?.length ? k.models : p.models,
+      thinking: p.thinking,
+      hasKey: !!(k?.apiKey && k.apiKey !== "sk-REPLACE_ME"),
+    };
+  });
   const custom = keys.custom;
   const customView = custom?.baseURL
     ? [{ id: "custom", name: "自定义渠道", baseURL: custom.baseURL, models: custom.models ?? [], hasKey: !!custom.apiKey }]
