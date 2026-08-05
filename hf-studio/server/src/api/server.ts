@@ -56,6 +56,23 @@ export function createServer(opts: {
     const model = String(form.get("model") ?? "").trim() || opts.config.defaults.model;
     // 前端 BYOK 自定义渠道（可选）：JSON 数组 [{id, baseURL, apiKey, models[]}]
     const providers = parseProviders(String(form.get("providers") ?? ""));
+    // 主题预设（可选）：{ id, hue: { primary, accent } }，JSON 字符串传入，非法返回 400
+    const themeRaw = String(form.get("theme") ?? "");
+    let theme: JobConfig["theme"];
+    if (themeRaw.trim()) {
+      try {
+        const parsed = JSON.parse(themeRaw) as JobConfig["theme"];
+        if (!parsed || typeof parsed.id !== "string" || !parsed.id.trim()) {
+          return c.json({ error: "theme 不合法" }, 400);
+        }
+        theme = parsed;
+      } catch {
+        return c.json({ error: "theme 不合法（JSON 解析失败）" }, 400);
+      }
+    }
+    // 渲染清晰度档位：仅 "standard" | "high"
+    const renderQuality = String(form.get("renderQuality") ?? "standard");
+    if (renderQuality !== "standard" && renderQuality !== "high") return c.json({ error: "renderQuality 不合法" }, 400);
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
     if (!model) return c.json({ error: "请选择模型渠道（模型未配置）" }, 400);
@@ -71,7 +88,9 @@ export function createServer(opts: {
       idea, durationSec, format, voiceover, voice, language,
       models: { default: model },
       materials: { images, audio },
+      renderQuality,
       ...(providers.length > 0 ? { providers } : {}),
+      ...(theme ? { theme } : {}),
     });
 
     const assetDir = join(opts.projectsRoot, jobId, "assets");
@@ -88,7 +107,7 @@ export function createServer(opts: {
       if (isImg) images.push(safe);
       else audio = safe;
     }
-    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, ...(providers.length > 0 ? { providers } : {}) } });
+    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, renderQuality, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
     opts.engine.enqueue(jobId);
     return c.json({ id: jobId }, 201);
   });

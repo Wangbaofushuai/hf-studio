@@ -6,10 +6,12 @@ import { probeMedia } from "../../util/ffprobe";
 export const step6Render: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
   const outPath = "renders/output.mp4";
   const abs = join(ctx.projectDir, outPath);
+  // 清晰度档位：引擎注入 `_renderQuality`（默认 standard）；直接调用时回退到 config.renderQuality
+  const quality = (ctx as unknown as { _renderQuality?: string })._renderQuality ?? ctx.config.renderQuality ?? "standard";
   // 确保输出目录存在（渲染器/ffmpeg 不会自动创建父目录，缺失时直接失败）
   mkdirSync(join(ctx.projectDir, "renders"), { recursive: true });
   try {
-    await ctx.render.render(abs, "standard");
+    await ctx.render.render(abs, quality as "standard" | "high");
   } catch (e) {
     return { status: "gate_failed", artifacts: [], data: {}, log: `渲染失败`, gateErrors: [e instanceof Error ? e.message : String(e)] };
   }

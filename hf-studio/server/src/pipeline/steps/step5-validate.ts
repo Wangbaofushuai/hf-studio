@@ -49,9 +49,9 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         ],
         temperature: 0.3,
         seed: 55,
-        // 修复同样要求严格遵守 composition 契约：强制思考 + 低档（与 step4 同理）
+        // 修复同样要求严格遵守 composition 契约：强制思考 + 中等档（与 step4 同理）
         thinking: "enabled",
-        reasoningEffort: "low",
+        reasoningEffort: "medium",
       });
       writeFileSync(abs, stripClipAttrs(ensureCjkFontStack(stripCodeFences(fixed))));
     }

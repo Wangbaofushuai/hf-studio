@@ -4,9 +4,27 @@ import type { StepContext, StepFn, StepResult, Brief, JudgeResult } from "../../
 
 const SYSTEM = readFileSync(new URL("../../prompts/design.txt", import.meta.url), "utf8");
 
+// 主题关键词表（与前端主题预设同步）：theme.id → 关键词
+const THEME_KEYWORDS: Record<string, string> = {
+  tech: "深蓝紫霓虹/网格/数据感/高对比",
+  nature: "米白绿/柔和圆角/大留白/自然光",
+  business: "白深灰蓝/大字号/克制动效/专业权威",
+  warm: "奶油橙棕/圆润/亲和/教育",
+  retro: "暖黄锈红/颗粒/衬线大字/年代感",
+  dark: "近黑底/荧光强调/霓虹边框/大标题",
+};
+
+/** 主题约束注入：选中主题时给 LLM 明确的色相与关键词约束；未选中返回空串（行为不变） */
+function themeConstraint(t?: { id: string; hue?: { primary?: string; accent?: string } }): string {
+  if (!t) return "";
+  const kw = THEME_KEYWORDS[t.id] ?? "";
+  return `主题：${t.id}${kw ? `, ${kw}` : ""} 主色:${t.hue?.primary ?? "未指定"} 强调色:${t.hue?.accent ?? "未指定"}，主色与强调色必须采用给定值（除非与画幅/可读性冲突），其余色板按主题推导；未指定则自由发挥。`;
+}
+
 export const step1Design: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
   const model = (ctx as unknown as { _model?: string })._model ?? ctx.config.models.default;
   const brief = (prev[0]?.data.brief ?? JSON.parse(readFileSync(join(ctx.projectDir, "brief.json"), "utf8"))) as Brief;
+  const themeNote = themeConstraint(ctx.config.theme);
 
   const { content } = await ctx.llm.chat({
     model,
@@ -14,7 +32,7 @@ export const step1Design: StepFn = async (ctx: StepContext, prev): Promise<StepR
       { role: "system", content: SYSTEM },
       {
         role: "user",
-        content: `brief：\n${JSON.stringify(brief, null, 2)}\n\n素材清单：\n${JSON.stringify(ctx.config.materials, null, 2)}${ctx.feedback ? `\n\n评审反馈（必须针对性修正）：\n${ctx.feedback}` : ""}`,
+        content: `brief：\n${JSON.stringify(brief, null, 2)}\n\n素材清单：\n${JSON.stringify(ctx.config.materials, null, 2)}${themeNote ? `\n\n主题约束：\n${themeNote}` : ""}${ctx.feedback ? `\n\n评审反馈（必须针对性修正）：\n${ctx.feedback}` : ""}`,
       },
     ],
     temperature: 0.7,

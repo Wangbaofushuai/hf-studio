@@ -147,6 +147,8 @@ export class PipelineEngine {
       };
       // 注入模型：步骤内通过 ctx.llm.chat({ model, ... }) 使用
       (ctx as StepContext & { _model: string })._model = model;
+      // 注入渲染清晰度档位：step6 用它透传 --quality（无配置时默认 standard）
+      (ctx as StepContext & { _renderQuality: string })._renderQuality = store.getJob(jobId)!.config.renderQuality ?? "standard";
       try {
         const r: StepResult = await stepFn(ctx, prev);
         if (r.status === "passed") {

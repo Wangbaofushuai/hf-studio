@@ -27,6 +27,11 @@ export interface JobConfig {
   models: { default: string; steps?: Partial<Record<StepId, string>> };  // 形如 "deepseek/deepseek-chat"
   materials: { images: string[]; audio: string | null };  // assets/ 下的文件名
   providers?: LlmProvider[];                      // 前端 BYOK 自定义渠道（可选）；合并时优先于同名内置渠道
+  theme?: {                                      // 主题预设（可选）；透传到 step1/step2 约束 prompt
+    id: string;                                  // 主题关键词表键，如 "tech"/"nature"/"dark"...
+    hue?: { primary?: string; accent?: string }; // 主色/强调色 HEX
+  };
+  renderQuality?: "standard" | "high";           // 渲染清晰度档位（hyperframes render --quality）；默认 standard
 }
 
 export interface Brief {

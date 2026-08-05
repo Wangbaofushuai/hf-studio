@@ -90,10 +90,10 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         temperature: 0.5,
         seed: 44,
         // beat 生成是流水线中最长的输出（完整 HTML 合成）。强制开启思考保证契约遵守，
-        // 但用低档思考：deepseek-v4-flash 实测全量思考 10-25 分钟/beat，low 档 30 秒级
+        // 用中等档思考：deepseek-v4-flash 实测全量思考 10-25 分钟/beat，medium 档分钟级，质量与耗时平衡
         timeoutMs: 900_000,
         thinking: "enabled",
-        reasoningEffort: "low",
+        reasoningEffort: "medium",
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，

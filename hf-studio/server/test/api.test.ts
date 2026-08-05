@@ -78,11 +78,76 @@ describe("API", () => {
     expect(store.getJob(id)?.config.providers?.[0]).toMatchObject({ id: "mykey", apiKey: "sk-test", models: ["custom-model"] });
   });
 
+  test("POST /api/jobs accepts theme preset and renderQuality", async () => {
+    const form = new FormData();
+    form.set("idea", "带主题预设");
+    form.set("durationSec", "10");
+    form.set("format", "landscape");
+    form.set("voiceover", "false");
+    form.set("voice", "zh-CN-XiaoxiaoNeural");
+    form.set("language", "zh-CN");
+    form.set("model", "fake/model-a");
+    form.set("theme", JSON.stringify({ id: "tech", hue: { primary: "#0f172a", accent: "#7dd3fc" } }));
+    form.set("renderQuality", "high");
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    expect(store.getJob(id)?.config.theme).toMatchObject({ id: "tech", hue: { primary: "#0f172a", accent: "#7dd3fc" } });
+    expect(store.getJob(id)?.config.renderQuality).toBe("high");
+  });
+
+  test("POST /api/jobs accepts theme without hue and defaults renderQuality to standard", async () => {
+    const form = new FormData();
+    form.set("idea", "主题无 hue");
+    form.set("durationSec", "10");
+    form.set("format", "square");
+    form.set("model", "fake/model-a");
+    form.set("theme", JSON.stringify({ id: "nature" }));
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    expect(store.getJob(id)?.config.theme).toEqual({ id: "nature" });
+    expect(store.getJob(id)?.config.renderQuality).toBe("standard");
+  });
+
+  test("POST /api/jobs rejects invalid theme JSON and invalid id", async () => {
+    const badJson = new FormData();
+    badJson.set("idea", "主题坏 JSON");
+    badJson.set("durationSec", "10");
+    badJson.set("format", "landscape");
+    badJson.set("model", "fake/model-a");
+    badJson.set("theme", "{not json");
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: badJson }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("theme 不合法") });
+
+    const badId = new FormData();
+    badId.set("idea", "主题坏 id");
+    badId.set("durationSec", "10");
+    badId.set("format", "landscape");
+    badId.set("model", "fake/model-a");
+    badId.set("theme", JSON.stringify({ hue: { primary: "#fff" } })); // 缺 id
+    const res2 = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: badId }));
+    expect(res2.status).toBe(400);
+  });
+
+  test("POST /api/jobs rejects invalid renderQuality", async () => {
+    const form = new FormData();
+    form.set("idea", "坏档位");
+    form.set("durationSec", "10");
+    form.set("format", "landscape");
+    form.set("model", "fake/model-a");
+    form.set("renderQuality", "ultra");
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "renderQuality 不合法" });
+  });
+
   test("GET /api/jobs lists jobs", async () => {
     const res = await server.fetch(new Request(`${base}/api/jobs`));
     const { jobs } = (await res.json()) as { jobs: unknown[] };
-    // 前两个用例各 POST 创建一个 job，故应为 2
-    expect(jobs.length).toBe(2);
+    // 前面用例成功 POST 创建了 4 个 job（2 个基础 + 2 个 theme/renderQuality；2 个非法输入用例不建 job）
+    expect(jobs.length).toBe(4);
   });
 
   test("GET /api/jobs/:id returns detail with steps", async () => {
