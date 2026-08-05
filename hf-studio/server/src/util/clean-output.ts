@@ -38,3 +38,17 @@ export function ensureCjkFontStack(html: string): string {
   if (out.includes("</body>")) return out.replace("</body>", CJK_FONT_FACE + "</body>");
   return out;
 }
+
+/** 子合成（beat）内部禁止 clip 属性：class="clip" 与 data-start/data-duration/data-track-index
+ * 只属于宿主槽位（index.html）。实测：子合成内使用 clip 属性触发平台窗口机制，窗口外元素被隐藏，
+ * 导出视频大面积空白。本函数把这些属性从 beat HTML 中剥掉（宿主槽位由 root-html.ts 单独生成，不受影响）。 */
+export function stripClipAttrs(html: string): string {
+  // 1) 从 class 值中移除 "clip"
+  let out = html.replace(/class="([^"]*)\bclip\b([^"]*)"/g, (_m, pre, post) => {
+    const merged = (pre + " " + post).replace(/\s+/g, " ").trim();
+    return merged ? `class="${merged}"` : "";
+  });
+  // 2) 移除 data-start / data-duration / data-track-index
+  out = out.replace(/\s*data-(?:start|duration|track-index)="[^"]*"/g, "");
+  return out;
+}

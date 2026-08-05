@@ -13,17 +13,18 @@
    样式用 #root 选择器（不能给根元素加 class 再按 class 写样式，作用域化后失效）。
 3. 时间轴：注册且只注册一个 window.__timelines["beat-N"] = gsap.timeline({ paused: true })，同步构建。
    根元素 data-duration 即片段时长；不要嵌套子时间轴，不要 gsap 操作片段外的元素。
-4. 动画元素：class="clip" + data-start（相对片段起点）+ data-duration + data-track-index。
-   **同轨道 clip 时间窗绝不允许重叠（含浮点误差）**：每个 clip 严格 data-duration = 结束时间 − 开始时间，
-   相邻 clip 之间至少留 0.1s 安全间隙；时间值用整数或一位小数（如 0.5、2.3），禁止产生 4.96/4.97 这类
-   浮点尾数——lint 报 overlapping_clips_same_track 即失败。
-5. 动画规则：
-   - 入场用 gsap.fromTo()（显式起点终点），禁用 gsap.from()；
-   - 初始状态写在 tween 里；禁止 CSS transform 与 GSAP tween 同属性冲突（lint 报 gsap_css_transform_conflict）；
-   - 禁止：渲染时时钟、Math.random()、网络请求、repeat:-1；禁止 gsap.set 未来片段元素；
-   - 只动画视觉属性（transform/opacity/color/filter/clip-path 等）；禁止 tween display/visibility，
-     也禁止 tween left/top 这类布局属性（lint 报 gsap_non_transform_motion，改用 x/y）；
-   - 正文禁止 <br>；被 transform 的元素必须块级且有尺寸；元素 id 加 beat-N- 前缀保证全局唯一。
+4. 动画：完全由 gsap 时间线驱动，位置用片段本地秒（0..data-duration）。
+   - 所有动画元素 CSS 初始态 = 可见终态（opacity:1、transform:none）——导出时子合成时间线可能不 seek，
+     内容必须"不靠时间线也完整可见"；
+   - 所有 fromTo 必须携带 immediateRender:false（gsap 不会在构建时应用隐藏起点）；
+   - 禁止 class="clip" 与 data-start/data-duration/data-track-index（只属于宿主槽位，子合成内使用会
+     触发平台 clip 窗口机制，窗口外元素被隐藏）；
+   - 用 fromTo 而非 from；禁止 repeat:-1 / 渲染时钟 / Math.random() / 网络请求 / gsap 操作片段外元素。
+5. 脚本安全（挂载期不得抛错，抛错则该片段时间线不注册）：
+   - 脚本第一行：window.__timelines = window.__timelines || {};（子合成脚本可能先于宿主脚本执行）；
+   - DOM 查询用本片段唯一的类/ID（前缀 beat-N-），禁止 "#root ..." 全局前缀选择（文档中存在多个 #root，
+     首个是宿主根，会查到 null）；
+   - 对任何 querySelector 结果先判空再使用（元素缺失则跳过，不得抛 TypeError）；textContent 赋值前判空。
 6. 媒体：<video> 必须 muted + playsinline；音频用独立 <audio>；禁止调用 play()/pause()/seek()；
    禁止动画媒体元素自身尺寸（包一层未计时的 wrapper）。
 7. 全屏背景：放绝对定位 inset:0 的子元素上，禁止放在合成根元素自身的 background（渲染时根背景会丢，画面变黑）。

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ensureCjkFontStack } from "../src/util/clean-output";
+import { ensureCjkFontStack, stripClipAttrs } from "../src/util/clean-output";
 
 const CJK = `font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;`;
 
@@ -63,5 +63,25 @@ describe("ensureCjkFontStack", () => {
     expect(out).toContain("data-cjk-font");
     expect(out).toContain(`src: local("Noto Sans CJK SC")`);
     expect(out.endsWith(`</style></body></html>`)).toBe(true);
+  });
+});
+
+describe("stripClipAttrs", () => {
+  test("剥掉 class='clip' 与 data-* 时间属性", () => {
+    const src = `<div id="root" data-composition-id="beat-1" data-width="1080" data-height="1920" data-duration="2.925"><div class="clip title-wrap" data-start="0.8" data-duration="1.8" data-track-index="5">标题</div></div>`;
+    const out = stripClipAttrs(src);
+    expect(out).not.toContain("clip");
+    expect(out).not.toContain("data-start");
+    expect(out).not.toContain("data-track-index");
+    expect(out).toContain('data-composition-id="beat-1"');
+    expect(out).toContain('data-width="1080"');
+  });
+  test("class 多值里 clip 移除后保留其余类", () => {
+    expect(stripClipAttrs(`<div class="clip title-wrap">`)).toBe(`<div class="title-wrap">`);
+    expect(stripClipAttrs(`<div class="title-wrap clip">`)).toBe(`<div class="title-wrap">`);
+  });
+  test("无 clip 的输入仅剥离时间属性", () => {
+    const out = stripClipAttrs(`<div class="a" data-x="1">`);
+    expect(out).toBe(`<div class="a" data-x="1">`);
   });
 });
