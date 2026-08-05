@@ -7,7 +7,7 @@ import Channels from "./pages/Channels";
 const NAV = [
   { to: "/", label: "新建任务", end: true },
   { to: "/jobs", label: "任务列表", end: false },
-  { to: "/channels", label: "模型渠道", end: false },
+  { to: "/channels", label: "设置", end: false },
 ];
 
 function Sidebar() {

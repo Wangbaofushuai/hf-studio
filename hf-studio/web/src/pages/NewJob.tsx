@@ -3,12 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { createJob, fetchChannels } from "../api";
 import type { ChannelsDto } from "../types";
 import VoiceSelect from "../components/VoiceSelect";
+import WizardSteps from "../components/WizardSteps";
 
 const FORMATS = [
   { id: "portrait", label: "竖屏 9:16" },
   { id: "landscape", label: "横屏 16:9" },
   { id: "square", label: "方形 1:1" },
 ] as const;
+
+const STEPS = ["内容设置", "模型", "素材与确认"];
 
 export default function NewJob() {
   const nav = useNavigate();
@@ -30,6 +33,9 @@ export default function NewJob() {
   const [tmpBase, setTmpBase] = useState("");
   const [tmpKey, setTmpKey] = useState("");
   const [tmpModels, setTmpModels] = useState("");
+  // 3 步向导
+  const [step, setStep] = useState(0);
+  const [maxReached, setMaxReached] = useState(0);
 
   useEffect(() => {
     fetchChannels().then(setCat).catch(() => setCat({ presets: [], custom: [] }));
@@ -45,11 +51,38 @@ export default function NewJob() {
     if (selected && !model.startsWith(`${selected.id}/`)) setModel(`${selected.id}/${selected.models[0]}`);
   }, [channelId]);
 
+  const customModels = tmpModels.split(",").map((m) => m.trim()).filter(Boolean);
+  const finalModel = model || (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0 ? `${tmpId}/${customModels[0]}` : "");
+
+  const canNext = step === 0 ? idea.trim().length > 0 : step === 1 ? Boolean(finalModel) : true;
+
+  function onJump(i: number) {
+    if (i <= maxReached) {
+      setStep(i);
+      window.scrollTo({ top: 0 });
+    }
+  }
+
+  function goNext() {
+    if (!canNext) {
+      setError(step === 0 ? "请先填写想法" : "请选择一个模型渠道");
+      return;
+    }
+    setMaxReached((m) => Math.max(m, step + 1));
+    setStep(step + 1);
+    setError("");
+    window.scrollTo({ top: 0 });
+  }
+
+  function goBack() {
+    setStep((s) => s - 1);
+    setError("");
+    window.scrollTo({ top: 0 });
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setError("");
-    const customModels = tmpModels.split(",").map((m) => m.trim()).filter(Boolean);
-    const finalModel = model || (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0 ? `${tmpId}/${customModels[0]}` : "");
     if (!finalModel) {
       setError("请选择一个模型渠道并填写 Key（或展开「临时自定义渠道」）");
       setBusy(false);
@@ -76,6 +109,8 @@ export default function NewJob() {
     }
   }
 
+  const formatLabel = FORMATS.find((f) => f.id === format)?.label ?? format;
+
   return (
     <form onSubmit={submit} className="space-y-8">
       <header>
@@ -83,121 +118,165 @@ export default function NewJob() {
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">输入想法与素材，交给流水线生成你的视频。</p>
       </header>
 
-      <section className="glass space-y-3 p-6">
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">你的想法</label>
-        <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={4} required
-          placeholder="例如：用三句话讲清楚太阳能发电的原理，风格偏科技感"
-          className="input resize-none" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">时长（秒）</label>
-            <div className="segmented">
-              {[10, 15, 30].map((s) => (
-                <button key={s} type="button" data-active={durationSec === s} onClick={() => setDurationSec(s)}>{s}s</button>
-              ))}
-            </div>
-            <input type="number" min={5} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))} className="input mt-2" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">画幅</label>
-            <div className="segmented">
-              {FORMATS.map((f) => (
-                <button key={f.id} type="button" data-active={format === f.id} onClick={() => setFormat(f.id)}>{f.label}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">配音</label>
-            <div className="segmented">
-              <button type="button" data-active={voiceover} onClick={() => setVoiceover(true)}>开启</button>
-              <button type="button" data-active={!voiceover} onClick={() => setVoiceover(false)}>关闭</button>
-            </div>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">旁白语言</label>
-            <select value={language} onChange={(e) => setLanguage(e.target.value)} className="input">
-              <option value="zh-CN">中文（zh-CN）</option>
-              <option value="en-US">英语（en-US）</option>
-              <option value="ja-JP">日语（ja-JP）</option>
-            </select>
-          </div>
-          {voiceover && (
+      <WizardSteps steps={STEPS} current={step} maxReached={maxReached} onJump={onJump} />
+
+      {step === 0 && (
+        <section className="glass space-y-3 p-6">
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">你的想法</label>
+          <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={4} required
+            placeholder="例如：用三句话讲清楚太阳能发电的原理，风格偏科技感"
+            className="input resize-none" />
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">音色</label>
-              <VoiceSelect lang={language} value={voice} onChange={setVoice} />
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">时长（秒）</label>
+              <div className="segmented">
+                {[10, 15, 30].map((s) => (
+                  <button key={s} type="button" data-active={durationSec === s} onClick={() => setDurationSec(s)}>{s}s</button>
+                ))}
+              </div>
+              <input type="number" min={5} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))} className="input mt-2" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">画幅</label>
+              <div className="segmented">
+                {FORMATS.map((f) => (
+                  <button key={f.id} type="button" data-active={format === f.id} onClick={() => setFormat(f.id)}>{f.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">配音</label>
+              <div className="segmented">
+                <button type="button" data-active={voiceover} onClick={() => setVoiceover(true)}>开启</button>
+                <button type="button" data-active={!voiceover} onClick={() => setVoiceover(false)}>关闭</button>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">旁白语言</label>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="input">
+                <option value="zh-CN">中文（zh-CN）</option>
+                <option value="en-US">英语（en-US）</option>
+                <option value="ja-JP">日语（ja-JP）</option>
+              </select>
+            </div>
+            {voiceover && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">音色</label>
+                <VoiceSelect lang={language} value={voice} onChange={setVoice} />
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {step === 1 && (
+        <section className="glass space-y-3 p-6">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">模型渠道</label>
+            <Link to="/channels" className="text-xs text-[#0071e3] hover:underline">管理渠道 →</Link>
+          </div>
+          {available.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-black/10 p-6 text-center dark:border-white/10">
+              <p className="text-sm text-neutral-500">还没有可用的模型渠道</p>
+              <Link to="/channels" className="btn-primary mt-3 inline-block">去配置 Key</Link>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {available.map((c) => (
+                <button key={c.id} type="button" onClick={() => setChannelId(c.id)}
+                  className={`rounded-xl border p-4 text-left transition-all ${
+                    channelId === c.id
+                      ? "border-[#0071e3] bg-[#0071e3]/5 shadow-md shadow-blue-500/10"
+                      : "border-black/10 bg-white/50 hover:border-black/20 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/25"
+                  }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{c.name}</span>
+                    <span className={`h-2.5 w-2.5 rounded-full ${channelId === c.id ? "bg-[#0071e3]" : "bg-green-500"}`} />
+                  </div>
+                  <p className="mt-1 truncate font-mono text-[11px] text-neutral-400">{c.baseURL}</p>
+                  <p className="mt-1 text-[11px] text-neutral-400">{c.models.length} 个模型</p>
+                </button>
+              ))}
             </div>
           )}
-        </div>
-      </section>
+          {selected && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">模型</label>
+              <select value={model} onChange={(e) => setModel(e.target.value)} className="input">
+                {selected.models.map((m) => <option key={m} value={`${selected.id}/${m}`}>{selected.id}/{m}</option>)}
+              </select>
+            </div>
+          )}
 
-      <section className="glass space-y-3 p-6">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">模型渠道</label>
-          <Link to="/channels" className="text-xs text-[#0071e3] hover:underline">管理渠道 →</Link>
-        </div>
-        {available.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-black/10 p-6 text-center dark:border-white/10">
-            <p className="text-sm text-neutral-500">还没有可用的模型渠道</p>
-            <Link to="/channels" className="btn-primary mt-3 inline-block">去配置 Key</Link>
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {available.map((c) => (
-              <button key={c.id} type="button" onClick={() => setChannelId(c.id)}
-                className={`rounded-xl border p-4 text-left transition-all ${
-                  channelId === c.id
-                    ? "border-[#0071e3] bg-[#0071e3]/5 shadow-md shadow-blue-500/10"
-                    : "border-black/10 bg-white/50 hover:border-black/20 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/25"
-                }`}>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{c.name}</span>
-                  <span className={`h-2.5 w-2.5 rounded-full ${channelId === c.id ? "bg-[#0071e3]" : "bg-green-500"}`} />
-                </div>
-                <p className="mt-1 truncate font-mono text-[11px] text-neutral-400">{c.baseURL}</p>
-                <p className="mt-1 text-[11px] text-neutral-400">{c.models.length} 个模型</p>
-              </button>
-            ))}
-          </div>
-        )}
-        {selected && (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">模型</label>
-            <select value={model} onChange={(e) => setModel(e.target.value)} className="input">
-              {selected.models.map((m) => <option key={m} value={`${selected.id}/${m}`}>{selected.id}/{m}</option>)}
-            </select>
-          </div>
-        )}
+          <details open={tmpOpen} onToggle={(e) => setTmpOpen(e.currentTarget.open)} className="rounded-xl border border-dashed border-black/10 p-4 dark:border-white/10">
+            <summary className="cursor-pointer text-sm text-neutral-500">临时自定义渠道（不保存，仅本次任务使用）</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input className="input" placeholder="渠道名，如 mykey" value={tmpId} onChange={(e) => setTmpId(e.target.value)} />
+              <input className="input" placeholder="BaseURL，如 https://api.example.com/v1" value={tmpBase} onChange={(e) => setTmpBase(e.target.value)} />
+              <input className="input" type="password" placeholder="API Key" value={tmpKey} onChange={(e) => setTmpKey(e.target.value)} autoComplete="off" />
+              <input className="input" placeholder="模型列表，逗号分隔" value={tmpModels} onChange={(e) => setTmpModels(e.target.value)} />
+            </div>
+          </details>
+        </section>
+      )}
 
-        <details open={tmpOpen} onToggle={(e) => setTmpOpen(e.currentTarget.open)} className="rounded-xl border border-dashed border-black/10 p-4 dark:border-white/10">
-          <summary className="cursor-pointer text-sm text-neutral-500">临时自定义渠道（不保存，仅本次任务使用）</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <input className="input" placeholder="渠道名，如 mykey" value={tmpId} onChange={(e) => setTmpId(e.target.value)} />
-            <input className="input" placeholder="BaseURL，如 https://api.example.com/v1" value={tmpBase} onChange={(e) => setTmpBase(e.target.value)} />
-            <input className="input" type="password" placeholder="API Key" value={tmpKey} onChange={(e) => setTmpKey(e.target.value)} autoComplete="off" />
-            <input className="input" placeholder="模型列表，逗号分隔" value={tmpModels} onChange={(e) => setTmpModels(e.target.value)} />
-          </div>
-        </details>
-      </section>
+      {step === 2 && (
+        <>
+          <section className="glass space-y-3 p-6">
+            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">配置汇总</h3>
+            <dl className="space-y-2 text-sm">
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">想法</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{idea.length > 60 ? `${idea.slice(0, 60)}…` : idea}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">时长 / 画幅</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{durationSec} 秒 · {formatLabel}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">配音</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{voiceover ? `开启 · ${language} · ${voice}` : "关闭"}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">渠道 / 模型</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
+                  {finalModel ? `${selected ? selected.name : tmpId} · ${finalModel}` : "未选择"}
+                </dd>
+              </div>
+            </dl>
+          </section>
 
-      <section className="glass space-y-3 p-6">
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">素材（可选：图片 / 背景音乐）</label>
-        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 py-8 text-neutral-400 transition-colors hover:border-[#0071e3]/50 dark:border-white/15">
-          <span className="text-2xl">＋</span>
-          <span className="text-sm">点击选择或拖拽图片 / 音频到此处</span>
-          <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,audio/mpeg,audio/wav"
-            className="hidden" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
-        </label>
-        {files.length > 0 && (
-          <ul className="flex flex-wrap gap-2">
-            {files.map((f) => <li key={f.name} className="rounded-lg bg-black/[0.05] px-2.5 py-1 text-xs text-neutral-600 dark:bg-white/10 dark:text-neutral-300">{f.name}</li>)}
-          </ul>
-        )}
-      </section>
+          <section className="glass space-y-3 p-6">
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">素材（可选：图片 / 背景音乐）</label>
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 py-8 text-neutral-400 transition-colors hover:border-[#0071e3]/50 dark:border-white/15">
+              <span className="text-2xl">＋</span>
+              <span className="text-sm">点击选择或拖拽图片 / 音频到此处</span>
+              <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/svg+xml,audio/mpeg,audio/wav"
+                className="hidden" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+            </label>
+            {files.length > 0 && (
+              <ul className="flex flex-wrap gap-2">
+                {files.map((f) => <li key={f.name} className="rounded-lg bg-black/[0.05] px-2.5 py-1 text-xs text-neutral-600 dark:bg-white/10 dark:text-neutral-300">{f.name}</li>)}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
 
       {error && <p className="text-sm text-red-500">{error}</p>}
-      <button type="submit" disabled={busy} className="btn-primary w-full py-3 text-base">
-        {busy ? "提交中…" : "生成视频"}
-      </button>
+
+      <div className="flex gap-3">
+        {step > 0 && (
+          <button type="button" onClick={goBack} className="btn-secondary w-36 py-3">上一步</button>
+        )}
+        {step < 2 ? (
+          <button type="button" onClick={goNext} className="btn-primary flex-1 py-3 text-base">下一步</button>
+        ) : (
+          <button type="submit" disabled={busy} className="btn-primary flex-1 py-3 text-base">
+            {busy ? "提交中…" : "生成视频"}
+          </button>
+        )}
+      </div>
     </form>
   );
 }

@@ -209,12 +209,15 @@ export default function Channels() {
   return (
     <div className="space-y-8">
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">模型渠道</h2>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">填入 Key 后点「获取模型」拉取该渠道全部模型，勾选需要的保存；Key 只存服务器、不回显。</p>
+        <h2 className="text-2xl font-semibold tracking-tight">设置</h2>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">渠道配置：填入 Key 后点「获取模型」拉取该渠道全部模型，勾选需要的保存；Key 只存服务器、不回显。</p>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        {presets.map((ch) => <ChannelCard key={ch.id} ch={ch} onSaved={setCat} />)}
+      <section>
+        <h3 className="mb-3 text-sm font-semibold text-neutral-600 dark:text-neutral-300">渠道配置</h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          {presets.map((ch) => <ChannelCard key={ch.id} ch={ch} onSaved={setCat} />)}
+        </div>
       </section>
 
       <section>
