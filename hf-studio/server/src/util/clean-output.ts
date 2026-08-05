@@ -7,14 +7,34 @@ export function stripCodeFences(content: string): string {
 
 /** 中文字体栈 —— 服务端的 fontconfig 对 "system-ui" 等泛型栈解析不到中文字形
  * （fc-match "system-ui" :charset=4e00 为空 → headless 渲染成方块），
- * 必须按字体名显式声明（fc-match "Noto Sans CJK SC" 可命中）。 */
+ * 必须按字体名显式声明（fc-match "Noto Sans CJK SC" 可命中）。
+ * 只列下方 CJK_FONT_FACE 覆盖到的 3 个字体：hyperframes 的 font_family_without_font_face
+ * 会拦截不在其自动解析列表、又无 @font-face 的具名字体，多出的
+ * "Noto Sans CJK JP"/"Hiragino Sans GB"/"WenQuanYi Micro Hei" 会让 lint 直接 FAIL。 */
 export const CJK_FONT_STACK =
-  `"Noto Sans CJK SC", "Noto Sans CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", sans-serif`;
+  `"Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif`;
 
-/** 把 composition HTML 中所有含 system-ui 的 font-family 声明整体替换为中文字体栈。
- *  - 只动含 system-ui 的声明：那是 LLM 的默认写法且不带中文字形；显式西文字体（如 Georgia）
- *    与已含 Noto Sans CJK 的写法原样保留（含则跳过，防重复）。 */
+/** hyperframes 的 lint 规则 font_family_without_font_face 会拦截 font-family 里使用具名中文字体
+ * （noto sans cjk sc / pingfang sc / microsoft yahei 不在其自动解析字体列表，直接 lint 即 FAIL）。
+ * 修复（lint 自身指引 + 实测验证）：对系统内置字体补一条 `@font-face { font-family: 'X'; src: local('X'); }`
+ * 声明即满足检查。本块在注入点（</template> 之前，style 保留在 template 内）一次性注入；
+ * 已含 data-cjk-font 标记则跳过（幂等），避免重复注入。 */
+const CJK_FONT_FACE = `\n<style data-cjk-font>
+@font-face { font-family: "Noto Sans CJK SC"; src: local("Noto Sans CJK SC"); }
+@font-face { font-family: "PingFang SC"; src: local("PingFang SC"); }
+@font-face { font-family: "Microsoft YaHei"; src: local("Microsoft YaHei"); }
+</style>`;
+
+/** 把 composition HTML 中所有含 system-ui 的 font-family 声明整体替换为中文字体栈，并保证
+ * HTML 内注入 @font-face 块（lint font_family_without_font_face 通过的必要条件）。
+ *  - 只动含 system-ui 的声明：那是 LLM 的默认写法且不带中文字形；显式西文字体（如 Georgia）原样保留。
+ *  - @font-face 注入幂等：已含 `data-cjk-font` 标记则跳过（不重复注入）。
+ *  - 注入位置：`</template>` 之前（style 必须留在 template 内）；无 </template> 则退化到 </body> 前；
+ *    两者皆无的输入是 CSS 片段而非完整合成文档，保持原样不注入。 */
 export function ensureCjkFontStack(html: string): string {
-  if (html.includes("Noto Sans CJK SC")) return html;
-  return html.replace(/font-family\s*:\s*([^;}]*system-ui[^;}]*);?/gi, `font-family: ${CJK_FONT_STACK};`);
+  const out = html.replace(/font-family\s*:\s*([^;}]*system-ui[^;}]*);?/gi, `font-family: ${CJK_FONT_STACK};`);
+  if (out.includes("data-cjk-font")) return out;
+  if (out.includes("</template>")) return out.replace("</template>", CJK_FONT_FACE + "</template>");
+  if (out.includes("</body>")) return out.replace("</body>", CJK_FONT_FACE + "</body>");
+  return out;
 }

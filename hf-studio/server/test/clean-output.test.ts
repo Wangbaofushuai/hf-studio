@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ensureCjkFontStack } from "../src/util/clean-output";
 
-const CJK = `font-family: "Noto Sans CJK SC", "Noto Sans CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", sans-serif;`;
+const CJK = `font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;`;
 
 describe("ensureCjkFontStack", () => {
   test("system-ui 泛型栈整体替换为中文字体栈，其余样式保留", () => {
@@ -28,5 +28,40 @@ describe("ensureCjkFontStack", () => {
     const out = ensureCjkFontStack(src);
     expect(out).not.toContain("system-ui");
     expect(out).not.toContain("SYSTEM-UI");
+  });
+
+  test("system-ui 替换 + @font-face 注入同时发生（注入在 </template> 之前）", () => {
+    const src = `#root{font-family:"system-ui",sans-serif}</template>`;
+    const out = ensureCjkFontStack(src);
+    expect(out).toContain(CJK);
+    expect(out).not.toContain("system-ui");
+    expect(out).toContain("data-cjk-font");
+    expect(out).toContain(`src: local("Noto Sans CJK SC")`);
+    // 注入块紧贴 </template> 之前（style 保留在 template 内）
+    expect(out.endsWith(`</style></template>`)).toBe(true);
+  });
+
+  test("已含 data-cjk-font 标记 → 不重复注入，但 system-ui 仍被替换", () => {
+    const src = `<style data-cjk-font>
+@font-face { font-family: "Noto Sans CJK SC"; src: local("Noto Sans CJK SC"); }
+@font-face { font-family: "PingFang SC"; src: local("PingFang SC"); }
+@font-face { font-family: "Microsoft YaHei"; src: local("Microsoft YaHei"); }
+</style>
+#root{font-family:"system-ui",sans-serif}`;
+    const out = ensureCjkFontStack(src);
+    // @font-face 块只出现一次（无重复注入）
+    expect(out.match(/@font-face/g)!.length).toBe(3);
+    expect(out.indexOf("data-cjk-font")).toBe(out.lastIndexOf("data-cjk-font"));
+    expect(out).toContain(CJK);
+    expect(out).not.toContain("system-ui");
+  });
+
+  test("无 </template> → 退化到 </body> 前注入", () => {
+    const src = `#root{font-family:"system-ui",sans-serif}</body></html>`;
+    const out = ensureCjkFontStack(src);
+    expect(out).not.toContain("system-ui");
+    expect(out).toContain("data-cjk-font");
+    expect(out).toContain(`src: local("Noto Sans CJK SC")`);
+    expect(out.endsWith(`</style></body></html>`)).toBe(true);
   });
 });

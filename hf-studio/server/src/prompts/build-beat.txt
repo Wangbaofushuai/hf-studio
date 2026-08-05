@@ -31,11 +31,8 @@
    入场 0.6-1.2s → 内容动画分布在中间 → 结尾 0.3-0.5s 稳定终态；片段内动画时长总和 ≤ 窗口时长。
 9. 视觉质量：严格使用 DESIGN.md 的颜色与字体；字号分层（标题 ≥ 80px、副题 40-60px、正文 ≥ 32px，按画幅微调）；
    至少 2 个动画层次（入场 + 内容动效）；留白充足；结束时画面稳定不闪烁。
-   **字体声明**：只用通用字体栈 "system-ui, sans-serif"（或 DESIGN.md 明确指定的字体并同时提供 @font-face）；
-   禁止声明 "noto sans sc"、"pingfang sc"、"microsoft yahei" 等未提供 @font-face 的具名中文字体——
-   lint 报 font_family_without_font_face 即失败。
+   **字体声明**：所有文字必须使用中文字体栈 font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif
+   （西文装饰字体可叠前，如 "Georgia", "Noto Sans CJK SC", sans-serif）；@font-face 由服务端流水线自动注入，
+   禁止手写自定义 @font-face，也禁止 system-ui 或仅 sans-serif 这类不保证中文字形的字体栈（服务端无法解析 → 渲染成方块）。
 10. 素材引用：只引用"素材清单"中真实存在的文件；禁止引用未提供的素材（如自造 assets/sun_icon.svg）——
     lint 报 missing_local_asset 即失败；无素材时全部用程序化图形（CSS/SVG/Canvas 绘制）。
-11. 字体：所有文字必须使用中文字体栈 font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif；
-    禁止使用 system-ui 或仅 sans-serif 这类不保证中文字形的字体栈（服务端无法解析 → 渲染成方块）。
-    西文装饰字体可叠加在中文栈之前，如 font-family: "Georgia", "Noto Sans CJK SC", sans-serif。
