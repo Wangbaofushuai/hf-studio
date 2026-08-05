@@ -36,3 +36,6 @@
    lint 报 font_family_without_font_face 即失败。
 10. 素材引用：只引用"素材清单"中真实存在的文件；禁止引用未提供的素材（如自造 assets/sun_icon.svg）——
     lint 报 missing_local_asset 即失败；无素材时全部用程序化图形（CSS/SVG/Canvas 绘制）。
+11. 字体：所有文字必须使用中文字体栈 font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif；
+    禁止使用 system-ui 或仅 sans-serif 这类不保证中文字形的字体栈（服务端无法解析 → 渲染成方块）。
+    西文装饰字体可叠加在中文栈之前，如 font-family: "Georgia", "Noto Sans CJK SC", sans-serif。

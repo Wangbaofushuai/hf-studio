@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
-import { stripCodeFences } from "../../util/clean-output";
+import { stripCodeFences, ensureCjkFontStack } from "../../util/clean-output";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
 
@@ -53,7 +53,7 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         thinking: "enabled",
         reasoningEffort: "low",
       });
-      writeFileSync(abs, stripCodeFences(fixed));
+      writeFileSync(abs, ensureCjkFontStack(stripCodeFences(fixed)));
     }
     check = await ctx.render.check();
   }
