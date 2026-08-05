@@ -33,6 +33,7 @@ export function buildEngine(store: JobStore = createStore(), config: AppConfig =
   const services = {
     llm: new LlmGateway(providers),
     judge: new Judge(new LlmGateway(providers), config.defaults.judgeModel, config.defaults.judgeThreshold),
+    judgeModel: config.defaults.judgeModel,
     baseProviders: providers,
     render: (projectDir: string) => new RenderService(projectDir),
     tts: new TtsService(),

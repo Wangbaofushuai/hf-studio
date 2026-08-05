@@ -58,6 +58,7 @@ export function createServer(opts: {
     const providers = parseProviders(String(form.get("providers") ?? ""));
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
+    if (!model) return c.json({ error: "请选择模型渠道（模型未配置）" }, 400);
     // Number("abc") = NaN 会同时骗过 < 5 与 > 120 两个比较，必须显式拒绝非有限数
     if (!Number.isFinite(durationSec) || durationSec < 5 || durationSec > 120) {
       return c.json({ error: "durationSec 需在 5-120 之间" }, 400);

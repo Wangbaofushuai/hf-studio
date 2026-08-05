@@ -11,7 +11,8 @@ import type { JobStatus, StepContext, StepFn, StepId, StepOutput, StepResult } f
 export interface Services {
   llm: LlmGateway;
   judge: Judge;
-  baseProviders?: LlmProvider[];                                  // 内置渠道（config.json）
+  judgeModel?: string;                                            // 配置的评审模型（可为空 → 按任务默认模型）
+  baseProviders?: LlmProvider[];                                  // 内置渠道（config.json 预设 + 用户 key）
   render: (projectDir: string) => RenderService;
   tts: TtsService;
 }
@@ -95,8 +96,10 @@ export class PipelineEngine {
     const providers = mergeProviders(this.opts.services.baseProviders ?? [], job.config.providers);
     const hasCustom = (job.config.providers?.length ?? 0) > 0;
     const llm = hasCustom ? new LlmGateway(providers) : this.opts.services.llm;
-    const judge = hasCustom
-      ? new Judge(llm, job.config.models.default, this.opts.services.judge.threshold)
+    // 评审模型：配置了 judgeModel 用共享 Judge；否则按任务默认模型动态构建
+    // （config 只提供预设渠道时 judgeModel 为空——E2E 实测空模型报 unknown provider）
+    const judge = hasCustom || !this.opts.services.judgeModel
+      ? new Judge(llm, job.config.models.default, this.opts.services.judge?.threshold ?? 7)
       : this.opts.services.judge;
 
     const prev = store.getStepOutputs(jobId);

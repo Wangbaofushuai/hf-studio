@@ -29,18 +29,20 @@ const PROJECTS_ROOT = resolve(DATA_ROOT, "projects");
 
 async function main() {
   const config = loadConfig();
-  // 守卫：无预设渠道 / 未填真实 key / 无默认模型，均视为"未配置真实渠道"
+  // 守卫：无预设渠道 / 未填真实 key，均视为"未配置真实渠道"
   const providers = buildProviders(config.presetChannels, loadChannelKeys());
-  if (providers.length === 0 || !config.defaults.model) {
-    console.error("E2E 需要先配置模型渠道：在网页「模型渠道」页填写 Key，或在 data/channels.json 配置；默认模型在 config.json 的 defaults.model 指定");
+  if (providers.length === 0) {
+    console.error("E2E 需要先配置模型渠道：在网页「模型渠道」页填写 Key（预设 DeepSeek/GLM/Qwen/OpenAI/Kimi）");
     process.exit(2);
   }
+  // 默认模型：config.defaults.model 优先，否则取第一个已配置渠道的首个模型
+  const defaultModel = config.defaults.model || `${providers[0].id}/${providers[0].models[0]}`;
   mkdirSync(PROJECTS_ROOT, { recursive: true });
   const store = new JobStore(resolve(DATA_ROOT, "jobs.db"));
   store.init();
   store.recover();
   const llm = new LlmGateway(providers);
-  const judge = new Judge(new LlmGateway(providers), config.defaults.judgeModel || config.defaults.model, config.defaults.judgeThreshold);
+  const judge = new Judge(new LlmGateway(providers), config.defaults.judgeModel || defaultModel, config.defaults.judgeThreshold);
   const services = {
     llm,
     judge,
@@ -56,7 +58,7 @@ async function main() {
     voiceover: true,
     voice: config.tts.defaultVoice,
     language: config.tts.defaultLanguage,
-    models: { default: config.defaults.model },
+    models: { default: defaultModel },
     materials: { images: [], audio: null },
   };
 
