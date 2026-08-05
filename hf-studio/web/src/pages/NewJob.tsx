@@ -6,18 +6,33 @@ import VoiceSelect from "../components/VoiceSelect";
 import WizardSteps from "../components/WizardSteps";
 
 const FORMATS = [
-  { id: "portrait", label: "竖屏 9:16" },
-  { id: "landscape", label: "横屏 16:9" },
-  { id: "square", label: "方形 1:1" },
+  { id: "portrait", label: "竖屏 9:16 · 1080×1920" },
+  { id: "landscape", label: "横屏 16:9 · 1920×1080" },
+  { id: "square", label: "方形 1:1 · 1080×1080" },
 ] as const;
+
+const THEMES = [
+  { id: "tech", label: "科技感", emoji: "🔵" },
+  { id: "nature", label: "清新自然", emoji: "🌿" },
+  { id: "business", label: "商务极简", emoji: "💼" },
+  { id: "warm", label: "暖系知识", emoji: "☕" },
+  { id: "retro", label: "复古胶片", emoji: "🎞" },
+  { id: "dark", label: "暗黑潮流", emoji: "🌃" },
+] as const;
+
+const DURATIONS = [15, 30, 60, 90];
 
 const STEPS = ["内容设置", "模型", "素材与确认"];
 
 export default function NewJob() {
   const nav = useNavigate();
   const [idea, setIdea] = useState("");
-  const [durationSec, setDurationSec] = useState(15);
-  const [format, setFormat] = useState<"portrait" | "landscape" | "square">("portrait");
+  const [durationSec, setDurationSec] = useState(30);
+  const [format, setFormat] = useState<"portrait" | "landscape" | "square">("landscape");
+  const [themeId, setThemeId] = useState("");
+  const [themePrimary, setThemePrimary] = useState("#0071e3");
+  const [themeAccent, setThemeAccent] = useState("#ff6b6b");
+  const [quality, setQuality] = useState<"standard" | "hd">("standard");
   const [voiceover, setVoiceover] = useState(true);
   const [voice, setVoice] = useState("zh-CN-XiaoxiaoNeural");
   const [language, setLanguage] = useState("zh-CN");
@@ -96,6 +111,13 @@ export default function NewJob() {
     form.set("voice", voice);
     form.set("language", language);
     form.set("model", finalModel);
+    form.set("renderQuality", quality);
+    if (themeId) {
+      form.set("theme", JSON.stringify({
+        id: themeId,
+        hue: { primary: themePrimary || undefined, accent: themeAccent || undefined },
+      }));
+    }
     if (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0) {
       form.set("providers", JSON.stringify([{ id: tmpId, baseURL: tmpBase, apiKey: tmpKey, models: customModels }]));
     }
@@ -130,11 +152,11 @@ export default function NewJob() {
             <div>
               <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">时长（秒）</label>
               <div className="segmented">
-                {[10, 15, 30].map((s) => (
+                {DURATIONS.map((s) => (
                   <button key={s} type="button" data-active={durationSec === s} onClick={() => setDurationSec(s)}>{s}s</button>
                 ))}
               </div>
-              <input type="number" min={5} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))} className="input mt-2" />
+              <input type="number" min={5} max={240} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value))} className="input mt-2" />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">画幅</label>
@@ -165,6 +187,50 @@ export default function NewJob() {
                 <VoiceSelect lang={language} value={voice} onChange={setVoice} />
               </div>
             )}
+          </div>
+
+          <div className="border-t border-black/10 pt-4 dark:border-white/10">
+            <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-200">主题 / 预设模板</label>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {THEMES.map((t) => (
+                <button key={t.id} type="button" onClick={() => setThemeId(themeId === t.id ? "" : t.id)}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    themeId === t.id
+                      ? "border-[#0071e3] bg-[#0071e3]/5 shadow-md shadow-blue-500/10"
+                      : "border-black/10 bg-white/50 hover:border-black/20 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/25"
+                  }`}>
+                  <span className="text-xl">{t.emoji}</span>
+                  <span className="mt-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{t.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-neutral-400">{themeId ? "已选主题，可手动微调主色 / 强调色" : "自由发挥：不套用任何预设主题"}</p>
+            {themeId && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">主色 primary</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={themePrimary} onChange={(e) => setThemePrimary(e.target.value)} className="h-10 w-16 cursor-pointer rounded-lg border border-black/10 bg-transparent" />
+                    <span className="font-mono text-xs text-neutral-400">{themePrimary}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">强调色 accent</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={themeAccent} onChange={(e) => setThemeAccent(e.target.value)} className="h-10 w-16 cursor-pointer rounded-lg border border-black/10 bg-transparent" />
+                    <span className="font-mono text-xs text-neutral-400">{themeAccent}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-black/10 pt-4 dark:border-white/10">
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">清晰度</label>
+            <div className="segmented">
+              <button type="button" data-active={quality === "standard"} onClick={() => setQuality("standard")}>标准</button>
+              <button type="button" data-active={quality === "hd"} onClick={() => setQuality("hd")}>高清</button>
+            </div>
           </div>
         </section>
       )}
@@ -236,6 +302,22 @@ export default function NewJob() {
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">配音</dt>
                 <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{voiceover ? `开启 · ${language} · ${voice}` : "关闭"}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">主题</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
+                  {themeId ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {THEMES.find((t) => t.id === themeId)?.emoji} {THEMES.find((t) => t.id === themeId)?.label}
+                      {themePrimary && <span className="h-4 w-4 rounded-full border border-black/20" style={{ background: themePrimary }} />}
+                      {themeAccent && <span className="h-4 w-4 rounded-full border border-black/20" style={{ background: themeAccent }} />}
+                    </span>
+                  ) : "自由发挥"}
+                </dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">清晰度</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{quality === "hd" ? "高清" : "标准"}</dd>
               </div>
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">渠道 / 模型</dt>

@@ -6,6 +6,11 @@ import ProgressSteps from "../components/ProgressSteps";
 import ArtifactPanel from "../components/ArtifactPanel";
 
 const STATUS_LABEL: Record<string, string> = { queued: "排队中", running: "生成中", failed: "失败", needs_review: "待人工处理", completed: "完成" };
+const FORMAT_LABEL: Record<string, string> = {
+  landscape: "横屏 16:9 · 1920×1080",
+  portrait: "竖屏 9:16 · 1080×1920",
+  square: "方形 1:1 · 1080×1080",
+};
 
 export default function JobDetail() {
   const { id = "" } = useParams();
@@ -49,6 +54,36 @@ export default function JobDetail() {
       <div className="glass p-4">
         <ProgressSteps steps={steps} currentStep={job.currentStep} />
       </div>
+
+      <section className="glass p-5">
+        <h3 className="mb-3 text-sm font-semibold">任务配置</h3>
+        <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex gap-2">
+            <dt className="shrink-0 text-neutral-500">格式</dt>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{FORMAT_LABEL[job.config.format] ?? job.config.format}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="shrink-0 text-neutral-500">时长</dt>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{job.config.durationSec} 秒</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="shrink-0 text-neutral-500">清晰度</dt>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{job.config.renderQuality === "hd" ? "高清" : job.config.renderQuality === "standard" ? "标准" : "—"}</dd>
+          </div>
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
+            <dt className="shrink-0 text-neutral-500">主题</dt>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">
+              {job.config.theme ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  {job.config.theme.id}
+                  {job.config.theme.hue?.primary && <span className="h-4 w-4 rounded-full border border-black/20" style={{ background: job.config.theme.hue.primary }} />}
+                  {job.config.theme.hue?.accent && <span className="h-4 w-4 rounded-full border border-black/20" style={{ background: job.config.theme.hue.accent }} />}
+                </span>
+              ) : "自由发挥"}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
       <section className="glass p-5">
         <h3 className="mb-3 text-sm font-semibold">步骤时间线</h3>
