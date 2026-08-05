@@ -356,6 +356,15 @@ export async function startFlow(root: string, rl: import("node:readline/promises
     console.log(`${ok ? "✓" : "✗"} ${d.name}${ok ? " 就绪" : " 安装失败"}`);
   }
 
+  // LLM 渠道 key 提示（不阻塞启动）
+  try {
+    const { hasAnyKey, loadChannelKeys } = await import("./server/src/channels");
+    if (!hasAnyKey(loadChannelKeys(join(root, "data", "channels.json")))) {
+      const ip = publicIp();
+      console.log(`${DIM}提示：尚未配置任何模型渠道 Key。请打开 ${ip ? `http://${ip}:${webPort()}/channels` : "网页「模型渠道」页"} 填写（预设 DeepSeek/GLM/Qwen/OpenAI/Kimi）${RESET}`);
+    }
+  } catch { /* vd 独立运行时忽略渠道模块加载失败 */ }
+
   // 端口冲突检查（停止后立即启动时旧进程可能仍在退出，重试 ~5s 等端口释放）
   for (const [name, url] of [["后端", `http://localhost:${apiPort()}`], ["前端", `http://localhost:${webPort()}`]] as const) {
     let free = false;

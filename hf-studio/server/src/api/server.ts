@@ -6,10 +6,25 @@ import type { PipelineEngine } from "../pipeline/engine";
 import type { AppConfig } from "../config";
 import type { TtsService } from "../tts/service";
 import type { StepId, JobConfig, LlmProvider } from "../types";
+import { LlmGateway } from "../llm/gateway";
+import { buildProviders, channelCatalog, deleteChannelKey, loadChannelKeys, saveChannelKey, type ChannelKeys } from "../channels";
 
 const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 const ALLOWED_AUDIO = ["audio/mpeg", "audio/wav", "audio/mp4", "audio/x-wav"];
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+/** 渠道存储注入点（测试可传临时文件实现；缺省用真实 data/channels.json） */
+export interface ChannelsStore {
+  load: () => ChannelKeys;
+  save: (id: string, v: { apiKey: string; baseURL?: string; models?: string[] }) => void;
+  remove: (id: string) => void;
+}
+
+const defaultChannelsStore: ChannelsStore = {
+  load: loadChannelKeys,
+  save: saveChannelKey.bind(null, undefined),
+  remove: deleteChannelKey.bind(null, undefined),
+};
 
 /** 解析前端 BYOK 渠道 JSON；非法输入返回空数组（由调用方决定是否报错） */
 function parseProviders(raw: string): LlmProvider[] {
@@ -25,8 +40,10 @@ function parseProviders(raw: string): LlmProvider[] {
 
 export function createServer(opts: {
   store: JobStore; engine: PipelineEngine; config: AppConfig; projectsRoot: string; tts: TtsService;
+  channels?: ChannelsStore;
 }): { fetch: (req: Request) => Promise<Response> } {
   const app = new Hono();
+  const chStore = opts.channels ?? defaultChannelsStore;
 
   app.post("/api/jobs", async (c) => {
     const form = await c.req.formData();
@@ -145,10 +162,62 @@ export function createServer(opts: {
     return new Response(Bun.file(target));
   });
 
-  app.get("/api/models", (c) => c.json({
-    providers: opts.config.providers.map((p) => ({ id: p.id, models: p.models })),
-    default: opts.config.defaults.model,
-  }));
+  app.get("/api/models", (c) => {
+    const providers = buildProviders(opts.config.presetChannels, chStore.load());
+    return c.json({
+      providers: providers.map((p) => ({ id: p.id, models: p.models })),
+      default: opts.config.defaults.model,
+    });
+  });
+
+  // ── 模型渠道管理（key 存服务端 data/channels.json，接口绝不回传 key） ──
+
+  app.get("/api/channels", (c) => c.json(channelCatalog(opts.config.presetChannels, chStore.load())));
+
+  app.put("/api/channels/:id", async (c) => {
+    const id = c.req.param("id");
+    const preset = opts.config.presetChannels.find((p) => p.id === id);
+    if (!preset) return c.json({ error: "未知渠道" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string; baseURL?: string; models?: string[] };
+    if (!body.apiKey || typeof body.apiKey !== "string") return c.json({ error: "apiKey 不能为空" }, 400);
+    if (id === "custom") {
+      if (!body.baseURL || !Array.isArray(body.models) || body.models.length === 0) {
+        return c.json({ error: "自定义渠道需要 baseURL 与至少一个模型" }, 400);
+      }
+      chStore.save(id, { apiKey: body.apiKey, baseURL: body.baseURL, models: body.models });
+    } else {
+      chStore.save(id, { apiKey: body.apiKey });
+    }
+    return c.json(channelCatalog(opts.config.presetChannels, chStore.load()));
+  });
+
+  app.delete("/api/channels/:id", (c) => {
+    const id = c.req.param("id");
+    const preset = opts.config.presetChannels.find((p) => p.id === id);
+    if (!preset) return c.json({ error: "未知渠道" }, 404);
+    chStore.remove(id);
+    return c.json(channelCatalog(opts.config.presetChannels, chStore.load()));
+  });
+
+  app.get("/api/channels/:id/test", async (c) => {
+    const id = c.req.param("id");
+    const providers = buildProviders(opts.config.presetChannels, chStore.load());
+    const provider = providers.find((p) => p.id === id);
+    if (!provider) return c.json({ ok: false, error: "渠道未配置 Key" });
+    const started = Date.now();
+    try {
+      const gw = new LlmGateway([provider]);
+      const r = await gw.chat({
+        model: `${id}/${provider.models[0]}`,
+        messages: [{ role: "user", content: "回复 OK 两个字" }],
+        maxTokens: 10,
+        timeoutMs: 30_000,
+      });
+      return c.json({ ok: true, latencyMs: Date.now() - started, content: r.content.slice(0, 20) });
+    } catch (e) {
+      return c.json({ ok: false, latencyMs: Date.now() - started, error: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
   app.get("/api/voices", async (c) => {
     const lang = c.req.query("lang");

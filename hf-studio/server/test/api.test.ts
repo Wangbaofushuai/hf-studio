@@ -9,7 +9,11 @@ import type { AppConfig } from "../src/config";
 import type { StepFn } from "../src/types";
 
 const config: AppConfig = {
-  providers: [], defaults: { model: "fake/model-a", judgeModel: "fake/model-a", judgeThreshold: 7 },
+  presetChannels: [
+    { id: "fake", name: "Fake", baseURL: "http://localhost:1/v1", models: ["model-a"] },
+    { id: "custom", name: "自定义渠道", baseURL: "", models: [] },
+  ],
+  defaults: { model: "fake/model-a", judgeModel: "fake/model-a", judgeThreshold: 7 },
   tts: { defaultVoice: "zh-CN-XiaoxiaoNeural", defaultLanguage: "zh-CN" },
 };
 
@@ -22,7 +26,17 @@ describe("API", () => {
     const steps: StepFn[] = [async (ctx: any) => { ran.push("step"); return { status: "passed", artifacts: [], data: {}, log: "ok" }; }];
     // judge 字段为 DEV：BYOK 任务走自定义渠道路径，引擎需要 services.judge.threshold 构造 Judge
     const engine = new PipelineEngine({ store, steps, services: { render: () => ({}), judge: { threshold: 7 } } as never, projectRoot: join(dir, "projects") });
-    server = createServer({ store, engine, config, projectsRoot: join(dir, "projects"), tts: { listVoices: async () => [{ shortName: "zh-CN-XiaoxiaoNeural", gender: "Female", locale: "zh-CN" }] } as never });
+    // 渠道存储注入内存实现，避免污染真实 data/channels.json
+    let channelData: Record<string, { apiKey: string; baseURL?: string; models?: string[] }> = {};
+    server = createServer({
+      store, engine, config, projectsRoot: join(dir, "projects"),
+      tts: { listVoices: async () => [{ shortName: "zh-CN-XiaoxiaoNeural", gender: "Female", locale: "zh-CN" }] } as never,
+      channels: {
+        load: () => channelData,
+        save: (id, v) => { channelData = { ...channelData, [id]: v }; },
+        remove: (id) => { const { [id]: _removed, ...rest } = channelData; channelData = rest; },
+      },
+    });
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -89,6 +103,47 @@ describe("API", () => {
     const res = await server.fetch(new Request(`${base}/api/voices?lang=zh-CN`));
     const body = (await res.json()) as { voices: { shortName: string }[] };
     expect(body.voices[0].shortName).toContain("Xiaoxiao");
+  });
+
+  test("channels: catalog lists presets without leaking keys; save/delete key flow", async () => {
+    // 初始：无 key
+    const res0 = await server.fetch(new Request(`${base}/api/channels`));
+    const cat0 = (await res0.json()) as { presets: { id: string; name: string; hasKey: boolean }[] };
+    expect(cat0.presets.map((p) => p.id)).toEqual(["fake", "custom"]);
+    expect(cat0.presets.every((p) => !p.hasKey)).toBe(true);
+    expect(JSON.stringify(cat0)).not.toContain("sk-");
+    // 填 key
+    const res = await server.fetch(new Request(`${base}/api/channels/fake`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-secret-123" }),
+    }));
+    expect(res.status).toBe(200);
+    const cat = (await res.json()) as { presets: { id: string; hasKey: boolean }[] };
+    expect(cat.presets.find((p) => p.id === "fake")?.hasKey).toBe(true);
+    expect(JSON.stringify(cat)).not.toContain("sk-secret-123"); // key 绝不出现在响应里
+    // 清 key
+    const res2 = await server.fetch(new Request(`${base}/api/channels/fake`, { method: "DELETE" }));
+    const cat2 = (await res2.json()) as { presets: { id: string; hasKey: boolean }[] };
+    expect(cat2.presets.find((p) => p.id === "fake")?.hasKey).toBe(false);
+  });
+
+  test("channels: custom channel requires baseURL and models; test endpoint reports unconfigured", async () => {
+    const bad = await server.fetch(new Request(`${base}/api/channels/custom`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-x" }), // 缺 baseURL/models
+    }));
+    expect(bad.status).toBe(400);
+    const ok = await server.fetch(new Request(`${base}/api/channels/custom`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-x", baseURL: "https://example.com/v1", models: ["m1"] }),
+    }));
+    expect(ok.status).toBe(200);
+    // 未配置渠道的 test → ok:false
+    const test = await server.fetch(new Request(`${base}/api/channels/glm/test`));
+    expect(await test.json()).toMatchObject({ ok: false });
   });
 
   test("POST /api/jobs/:id/rerun with model override replaces default model", async () => {

@@ -1,16 +1,46 @@
 {
-  "providers": [
+  "presetChannels": [
     {
       "id": "deepseek",
+      "name": "DeepSeek",
       "baseURL": "https://api.deepseek.com/v1",
-      "apiKey": "sk-REPLACE_ME",
-      "models": ["deepseek-chat"],
+      "models": ["deepseek-chat", "deepseek-v4-flash"],
       "thinking": "disabled"
+    },
+    {
+      "id": "glm",
+      "name": "智谱 GLM",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "models": ["glm-4.5", "glm-4.5-flash"]
+    },
+    {
+      "id": "qwen",
+      "name": "通义 Qwen",
+      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "models": ["qwen-plus", "qwen-turbo"]
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "baseURL": "https://api.openai.com/v1",
+      "models": ["gpt-4o", "gpt-4o-mini"]
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi",
+      "baseURL": "https://api.moonshot.cn/v1",
+      "models": ["moonshot-v1-8k"]
+    },
+    {
+      "id": "custom",
+      "name": "自定义渠道",
+      "baseURL": "",
+      "models": []
     }
   ],
   "defaults": {
-    "model": "deepseek/deepseek-chat",
-    "judgeModel": "deepseek/deepseek-chat",
+    "model": "",
+    "judgeModel": "",
     "judgeThreshold": 7
   },
   "tts": {

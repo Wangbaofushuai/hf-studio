@@ -14,6 +14,7 @@
 import { mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "../src/config";
+import { buildProviders, loadChannelKeys } from "../src/channels";
 import { JobStore } from "../src/db/store";
 import { LlmGateway } from "../src/llm/gateway";
 import { Judge } from "../src/judge/judge";
@@ -28,22 +29,22 @@ const PROJECTS_ROOT = resolve(DATA_ROOT, "projects");
 
 async function main() {
   const config = loadConfig();
-  // 守卫：无 provider / 无默认模型 / apiKey 为占位或空，均视为"未配置真实 provider"
-  const hasRealKey = config.providers.some((p) => p.apiKey && p.apiKey !== "sk-REPLACE_ME");
-  if (config.providers.length === 0 || !config.defaults.model || !hasRealKey) {
-    console.error("E2E 需要 server/config.json 配置真实 LLM provider（含 apiKey）");
+  // 守卫：无预设渠道 / 未填真实 key / 无默认模型，均视为"未配置真实渠道"
+  const providers = buildProviders(config.presetChannels, loadChannelKeys());
+  if (providers.length === 0 || !config.defaults.model) {
+    console.error("E2E 需要先配置模型渠道：在网页「模型渠道」页填写 Key，或在 data/channels.json 配置；默认模型在 config.json 的 defaults.model 指定");
     process.exit(2);
   }
   mkdirSync(PROJECTS_ROOT, { recursive: true });
   const store = new JobStore(resolve(DATA_ROOT, "jobs.db"));
   store.init();
   store.recover();
-  const llm = new LlmGateway(config.providers);
-  const judge = new Judge(new LlmGateway(config.providers), config.defaults.judgeModel || config.defaults.model, config.defaults.judgeThreshold);
+  const llm = new LlmGateway(providers);
+  const judge = new Judge(new LlmGateway(providers), config.defaults.judgeModel || config.defaults.model, config.defaults.judgeThreshold);
   const services = {
     llm,
     judge,
-    baseProviders: config.providers,
+    baseProviders: providers,
     render: (projectDir: string) => new RenderService(projectDir),
     tts: new TtsService(),
   } as never;

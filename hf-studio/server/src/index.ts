@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfig } from "./config";
 import type { AppConfig } from "./config";
+import { buildProviders, loadChannelKeys, migrateLegacyConfig } from "./channels";
 import { JobStore } from "./db/store";
 import { LlmGateway } from "./llm/gateway";
 import { Judge } from "./judge/judge";
@@ -22,11 +23,17 @@ function createStore(): JobStore {
   return store;
 }
 
+/** 合并预设渠道 + 用户 key → 引擎 providers（未填 key 的渠道不产出） */
+export function mergedProviders(config: AppConfig) {
+  return buildProviders(config.presetChannels, loadChannelKeys());
+}
+
 export function buildEngine(store: JobStore = createStore(), config: AppConfig = loadConfig()): PipelineEngine {
+  const providers = mergedProviders(config);
   const services = {
-    llm: new LlmGateway(config.providers),
-    judge: new Judge(new LlmGateway(config.providers), config.defaults.judgeModel, config.defaults.judgeThreshold),
-    baseProviders: config.providers,
+    llm: new LlmGateway(providers),
+    judge: new Judge(new LlmGateway(providers), config.defaults.judgeModel, config.defaults.judgeThreshold),
+    baseProviders: providers,
     render: (projectDir: string) => new RenderService(projectDir),
     tts: new TtsService(),
   };
@@ -35,6 +42,8 @@ export function buildEngine(store: JobStore = createStore(), config: AppConfig =
 
 if (import.meta.main) {
   mkdirSync(PROJECTS_ROOT, { recursive: true });
+  // 旧结构 config.json（providers 含 key）→ 迁移为 presetChannels + data/channels.json
+  migrateLegacyConfig();
   const config = loadConfig();
   const store = createStore();
   const engine = buildEngine(store, config);
