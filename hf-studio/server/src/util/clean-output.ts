@@ -32,11 +32,22 @@ const CJK_FONT_FACE = `\n<style data-cjk-font>
  *  - 注入位置：`</template>` 之前（style 必须留在 template 内）；无 </template> 则退化到 </body> 前；
  *    两者皆无的输入是 CSS 片段而非完整合成文档，保持原样不注入。 */
 export function ensureCjkFontStack(html: string): string {
-  const out = html.replace(/font-family\s*:\s*([^;}]*system-ui[^;}]*);?/gi, `font-family: ${CJK_FONT_STACK};`);
-  if (out.includes("data-cjk-font")) return out;
-  if (out.includes("</template>")) return out.replace("</template>", CJK_FONT_FACE + "</template>");
-  if (out.includes("</body>")) return out.replace("</body>", CJK_FONT_FACE + "</body>");
-  return out;
+  // 保护 @font-face 块（其 font-family 是字体名，不是字体栈，不得归一）
+  const faces: string[] = [];
+  let body = html.replace(/@font-face\s*\{[^}]*\}/g, (m) => {
+    faces.push(m);
+    return `\u0000CJKFACE${faces.length - 1}\u0000`;
+  });
+  // 所有不在本栈的 font-family 声明整体归一为本栈——LLM 可能产出任意具名字体
+  // （如 "Noto Sans SC"），不在 @font-face 覆盖集就会触发 font_family_without_font_face；
+  // 统一归一后可保证 lint 通过 + 服务端可解析。
+  const stackPattern = new RegExp(`font-family\\s*:\\s*${CJK_FONT_STACK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*;?`, "i");
+  body = body.replace(/font-family\s*:\s*([^;}]+);?/gi, (m) => (stackPattern.test(m) ? m : `font-family: ${CJK_FONT_STACK};`));
+  body = body.replace(/\u0000CJKFACE(\d+)\u0000/g, (_m, i) => faces[+i]);
+  if (body.includes("data-cjk-font")) return body;
+  if (body.includes("</template>")) return body.replace("</template>", CJK_FONT_FACE + "</template>");
+  if (body.includes("</body>")) return body.replace("</body>", CJK_FONT_FACE + "</body>");
+  return body;
 }
 
 /** 子合成（beat）内部禁止 clip 属性：class="clip" 与 data-start/data-duration/data-track-index

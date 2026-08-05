@@ -13,14 +13,32 @@ describe("ensureCjkFontStack", () => {
     expect(out).toContain("font-size: 72px");
   });
 
-  test("已含 Noto Sans CJK SC 的输出不再改写", () => {
+  test("非本栈的声明（含 CJK 但缺 PingFang/YaHei）归一为完整栈", () => {
     const src = `#root { font-family: "Noto Sans CJK SC", sans-serif; }`;
+    const out = ensureCjkFontStack(src);
+    expect(out).toContain(CJK);
+    expect(out).not.toContain('"Noto Sans CJK SC", sans-serif');
+  });
+
+  test("已经是本栈的声明保持原样", () => {
+    const src = `#root { ${CJK} }`;
     expect(ensureCjkFontStack(src)).toBe(src);
   });
 
-  test("显式西文字体（Georgia）保持不变", () => {
-    const src = `.title-line { font-family: Georgia, serif; }`;
-    expect(ensureCjkFontStack(src)).toBe(src);
+  test("任意具名字体（如 Noto Sans SC）归一为本栈", () => {
+    const src = `#root { font-family: "Noto Sans SC", sans-serif; color: #333; }`;
+    const out = ensureCjkFontStack(src);
+    expect(out).toContain(CJK);
+    expect(out).not.toContain("Noto Sans SC");
+    expect(out).toContain("color: #333");
+  });
+
+  test("@font-face 块内的 font-family 不被归一", () => {
+    const src = `@font-face { font-family: "CustomFont"; src: url(x.woff2); } .a{font-family:"CustomFont", sans-serif;}`;
+    const out = ensureCjkFontStack(src);
+    expect(out).toContain('font-family: "CustomFont";');
+    // 使用 CustomFont 的声明仍被归一（避免 lint 对未覆盖字体的拦截）
+    expect(out).toContain(CJK);
   });
 
   test("多处出现 system-ui（大小写不敏感）全部替换", () => {
