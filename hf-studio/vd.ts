@@ -8,11 +8,12 @@
  * 迁移性：脚本自定位（realpath 解析符号链接），项目根 = 脚本所在目录，
  * 零硬编码绝对路径——新服务器复制项目后 ln -s <项目>/vd.ts /usr/local/bin/vd 即可。
  */
-import { spawn, execFile } from "node:child_process";
+import { spawn, execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, realpathSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
+import { networkInterfaces } from "node:os";
 import process from "node:process";
 
 const execFileP = promisify(execFile);
@@ -23,6 +24,51 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** 项目根 = 脚本真实路径（解析符号链接）所在目录 */
 export function resolveProjectRoot(argv1 = process.argv[1]): string {
   return dirname(realpathSync(argv1 ?? ""));
+}
+
+// ─────────────────────────── 公网地址 ───────────────────────────
+
+/** 是否为私网/保留地址（10.x、172.16-31.x、192.168.x、100.64-127.x、169.254.x） */
+export function isPrivateIp(ip: string): boolean {
+  const [a, b] = ip.split(".").map(Number);
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  return false;
+}
+
+/** 公网 IPv4（无则返回第一个非回环地址；都没有返回 null）。
+ *  本机可能处于 NAT 环境（所有网卡都是私网 IP，如 10.8.0.8），公网地址只能从外部查询——
+ *  故优先 `curl ifconfig.me`（带 5 分钟缓存，避免每次渲染菜单都查外网）。 */
+let _cachedPublicIp: string | null | undefined;
+export function publicIp(): string | null {
+  if (_cachedPublicIp !== undefined) return _cachedPublicIp;
+  let result: string | null = null;
+  try {
+    const out = execFileSync("curl", ["-s", "-m", "3", "ifconfig.me"], { encoding: "utf8", timeout: 5000 }).trim();
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(out)) result = out;
+  } catch { /* fall through to local interfaces */ }
+  if (!result) {
+    const candidates: string[] = [];
+    try {
+      const out = execFileSync("hostname", ["-I"], { encoding: "utf8", timeout: 5000 });
+      for (const ip of out.trim().split(/\s+/)) {
+        if (ip.includes(".")) candidates.push(ip); // 只取 IPv4
+      }
+    } catch { /* fall through */ }
+    if (candidates.length === 0) {
+      for (const list of Object.values(networkInterfaces())) {
+        for (const i of list ?? []) {
+          if (i.family === "IPv4" && !i.internal) candidates.push(i.address);
+        }
+      }
+    }
+    result = candidates.find((ip) => !isPrivateIp(ip)) ?? candidates[0] ?? null;
+  }
+  _cachedPublicIp = result;
+  return result;
 }
 
 // ─────────────────────────── 状态文件 ───────────────────────────
@@ -256,9 +302,15 @@ export async function promptYesNo(rl: import("node:readline/promises").Interface
 
 export function renderMenu(running: boolean, state: VdState | null): void {
   const status = running ? `${G}RUN${RESET}` : `${DIM}STOP${RESET}`;
+  const ip = publicIp();
+  const wPort = webPort();
+  const aPort = apiPort();
   console.log(`\n${BOLD}╭─ HF-Studio 管理工具 ───────────────────╮${RESET}`);
-  console.log(`${BOLD}│${RESET} 状态: ${status}${running ? ` · 前端 ${state?.frontend.url ?? ""}` : ""}`);
-  if (running) console.log(`${BOLD}│${RESET}       后端 ${state?.backend.url ?? ""}`);
+  console.log(`${BOLD}│${RESET} 状态: ${status}${running ? ` · 公网 ${G}http://${ip ?? "?"}:${wPort}${RESET}` : ""}`);
+  if (running) {
+    console.log(`${BOLD}│${RESET}       本地 ${state?.frontend.url} · 后端 ${state?.backend.url}`);
+    if (ip) console.log(`${BOLD}│${RESET}       后端公网 http://${ip}:${aPort}`);
+  }
   console.log(`${BOLD}│${RESET}  1. 启动项目`);
   console.log(`${BOLD}│${RESET}  2. 停止项目`);
   console.log(`${BOLD}│${RESET}  0. 退出`);
@@ -304,9 +356,14 @@ export async function startFlow(root: string, rl: import("node:readline/promises
     console.log(`${ok ? "✓" : "✗"} ${d.name}${ok ? " 就绪" : " 安装失败"}`);
   }
 
-  // 端口冲突检查
+  // 端口冲突检查（停止后立即启动时旧进程可能仍在退出，重试 ~5s 等端口释放）
   for (const [name, url] of [["后端", `http://localhost:${apiPort()}`], ["前端", `http://localhost:${webPort()}`]] as const) {
-    if (await portOccupied(url)) {
+    let free = false;
+    for (let i = 0; i < 10; i++) {
+      if (!(await portOccupied(url))) { free = true; break; }
+      await sleep(500);
+    }
+    if (!free) {
       console.log(`端口冲突：${name} ${url} 已被占用，中止启动（可用 HF_API_PORT/HF_WEB_PORT 换端口）。`);
       return;
     }
@@ -324,9 +381,11 @@ export async function startFlow(root: string, rl: import("node:readline/promises
     return;
   }
   saveState(root, state);
+  const ip = publicIp();
   console.log(`\n${G}✓ 项目已启动${RESET}`);
   console.log(`  前端界面: ${BOLD}${state.frontend.url}${RESET}`);
   console.log(`  后端 API: ${BOLD}${state.backend.url}${RESET}`);
+  if (ip) console.log(`  公网访问: ${BOLD}http://${ip}:${webPort()}${RESET}（若打不开请检查云安全组是否放行 ${webPort()}/${apiPort()} 端口）`);
   await ask(rl, "按回车返回菜单…");
 }
 

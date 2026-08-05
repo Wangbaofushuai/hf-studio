@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
-  checkDeps, which, resolveProjectRoot,
+  checkDeps, which, resolveProjectRoot, isPrivateIp,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -82,5 +82,15 @@ describe("vd core", () => {
     const deps = await checkDeps(root, run as never);
     expect(deps.find((d) => d.name === "LLM key")?.ok).toBe(false);
     rmSync(root, { recursive: true, force: true });
+  });
+
+  test("isPrivateIp classifies public and private ranges", () => {
+    expect(isPrivateIp("10.8.0.8")).toBe(true);
+    expect(isPrivateIp("172.17.0.1")).toBe(true);
+    expect(isPrivateIp("192.168.1.1")).toBe(true);
+    expect(isPrivateIp("100.64.1.1")).toBe(true);
+    expect(isPrivateIp("169.254.1.1")).toBe(true);
+    expect(isPrivateIp("43.133.250.224")).toBe(false);
+    expect(isPrivateIp("8.8.8.8")).toBe(false);
   });
 });

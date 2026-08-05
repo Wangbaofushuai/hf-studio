@@ -63,11 +63,12 @@ cp config.example.json config.json   # 然后编辑，填入真实 apiKey
 ```
 
 ```bash
-# 3. 启动（两个终端，在 hf-studio/ 根目录）
-bun run dev:server   # 后端 :8787
-bun run dev:web      # 前端 :5173，/api 自动代理到 8787
+# 3. 启动（两个终端，在 hf-studio/ 根目录；或直接用 vd 管理工具一条龙启动）
+bun run dev:server   # 后端 :8787（绑 0.0.0.0，公网可访问）
+bun run dev:web      # 前端 :5173（绑 0.0.0.0），/api 自动代理到 8787
 
-# 4. 浏览器打开 http://localhost:5173
+# 4. 浏览器打开 http://localhost:5173（公网部署：http://<服务器公网IP>:5173，
+#    需云安全组放行 5173/8787；用 `vd` 启动会在菜单里显示公网地址）
 ```
 
 不配内置渠道也能用：前端「模型配置」里可直接填自定义渠道（名称 / BaseURL / Key / 模型列表），随任务提交、按任务生效。

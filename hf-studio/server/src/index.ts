@@ -41,6 +41,7 @@ if (import.meta.main) {
   const tts = new TtsService();
   const server = createServer({ store, engine, config, projectsRoot: PROJECTS_ROOT, tts });
   const port = Number(process.env.PORT ?? 8787);
-  Bun.serve({ port, fetch: server.fetch });
+  // 公网部署：显式绑 0.0.0.0（默认即全网卡，写明以明确意图）
+  Bun.serve({ hostname: "0.0.0.0", port, fetch: server.fetch });
   console.log(`[hf-studio] listening on http://localhost:${port}`);
 }
