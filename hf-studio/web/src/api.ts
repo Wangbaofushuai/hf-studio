@@ -16,7 +16,7 @@ export const fetchVoices = (lang = "zh-CN") => j<{ voices: VoiceDto[] }>(fetch(`
 
 // ── 模型渠道管理 ──
 export const fetchChannels = () => j<ChannelsDto>(fetch("/api/channels"));
-export const saveChannel = (id: string, body: { apiKey?: string; baseURL?: string; models?: string[] }) =>
+export const saveChannel = (id: string, body: { apiKey?: string; baseURL?: string; models?: string[]; name?: string }) =>
   j<ChannelsDto>(fetch(`/api/channels/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
 export const deleteChannel = (id: string) => j<ChannelsDto>(fetch(`/api/channels/${id}`, { method: "DELETE" }));
 export const testChannel = async (id: string): Promise<{ ok: boolean; latencyMs?: number; error?: string }> => {

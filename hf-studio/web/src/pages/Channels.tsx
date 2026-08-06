@@ -58,7 +58,7 @@ function ModelPicker({
   );
 }
 
-function ChannelCard({ ch, onSaved }: { ch: ChannelDto; onSaved: (c: ChannelsDto) => void }) {
+function ChannelCard({ ch, onSaved, editableName = false }: { ch: ChannelDto; onSaved: (c: ChannelsDto) => void; editableName?: boolean }) {
   const [key, setKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [test, setTest] = useState<{ ok: boolean; latencyMs?: number; error?: string } | null>(null);
@@ -135,7 +135,10 @@ function ChannelCard({ ch, onSaved }: { ch: ChannelDto; onSaved: (c: ChannelsDto
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold">{ch.name}</h3>
+            {editableName ? (
+              <input className="input !py-1 font-semibold" defaultValue={ch.name}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== ch.name) saveChannel(ch.id, { name: v }).then(onSaved).catch(() => {}); }} />
+            ) : <h3 className="font-semibold">{ch.name}</h3>}
             {ch.hasKey
               ? <span className="badge bg-green-500/10 text-green-600 dark:text-green-400">已配置</span>
               : <span className="badge bg-neutral-500/10 text-neutral-500">未配置</span>}
@@ -187,21 +190,22 @@ export default function Channels() {
   useEffect(() => { fetchChannels().then(setCat).catch(() => setCat({ presets: [], custom: [] })); }, []);
 
   const presets = cat?.presets.filter((p) => p.id !== "custom") ?? [];
-  const custom = cat?.custom[0] ?? null;
+  const customs = cat?.custom ?? [];
 
   const addCustom = async () => {
     const models = cModels.split(",").map((m) => m.trim()).filter(Boolean);
     if (!cName || !cBase || models.length === 0 || !cKey) { alert("名称/BaseURL/模型/Key 都要填"); return; }
     try {
-      const next = await saveChannel("custom", { apiKey: cKey.trim(), baseURL: cBase.trim(), models });
+      const id = `custom-${Date.now().toString(36)}`;
+      const next = await saveChannel(id, { apiKey: cKey.trim(), baseURL: cBase.trim(), models, name: cName.trim() });
       setCat(next);
       setAddingCustom(false); setCName(""); setCBase(""); setCModels(""); setCKey("");
     } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   };
 
-  const removeCustom = async () => {
-    if (!confirm("删除自定义渠道？")) return;
-    setCat(await deleteChannel("custom"));
+  const removeCustom = async (id: string) => {
+    if (!confirm("删除该自定义渠道？")) return;
+    setCat(await deleteChannel(id));
   };
 
   if (!cat) return <p className="text-sm text-neutral-500">加载中…</p>;
@@ -222,39 +226,38 @@ export default function Channels() {
 
       <section>
         <h3 className="mb-3 text-sm font-semibold text-neutral-600 dark:text-neutral-300">自定义渠道</h3>
-        {custom ? (
-          <div className="glass flex flex-col gap-3 p-5">
+        {customs.map((ch) => (
+          <div key={ch.id} className="glass mb-3 flex flex-col gap-3 p-5 last:mb-0">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-neutral-400 to-neutral-600 text-sm font-bold text-white">＋</div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="font-semibold">{custom.name}</h4>
-                  <span className="badge bg-green-500/10 text-green-600 dark:text-green-400">已配置</span>
+                  <h4 className="font-semibold">{ch.name}</h4>
+                  <span className={`badge ${ch.hasKey ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-neutral-500/10 text-neutral-500"}`}>{ch.hasKey ? "已配置" : "未配置"}</span>
                 </div>
-                <p className="truncate font-mono text-[11px] text-neutral-400">{custom.baseURL}</p>
+                <p className="truncate font-mono text-[11px] text-neutral-400">{ch.baseURL}</p>
               </div>
-              <button className="btn-secondary" onClick={removeCustom}>删除</button>
+              <button className="btn-secondary" onClick={() => removeCustom(ch.id)}>删除</button>
             </div>
-            <ChannelCard ch={custom} onSaved={setCat} />
+            <ChannelCard ch={ch} onSaved={setCat} editableName />
           </div>
-        ) : (
-          <div className="glass p-5">
-            {!addingCustom ? (
-              <button className="btn-secondary" onClick={() => setAddingCustom(true)}>＋ 添加自定义渠道</button>
-            ) : (
-              <div className="space-y-3">
-                <input className="input" placeholder="渠道名称（如 mykey）" value={cName} onChange={(e) => setCName(e.target.value)} />
-                <input className="input" placeholder="BaseURL（OpenAI 兼容，如 https://api.example.com/v1）" value={cBase} onChange={(e) => setCBase(e.target.value)} />
-                <input className="input" placeholder="模型列表，逗号分隔（如 model-a, model-b）" value={cModels} onChange={(e) => setCModels(e.target.value)} />
-                <input className="input" type="password" placeholder="API Key" value={cKey} onChange={(e) => setCKey(e.target.value)} autoComplete="off" />
-                <div className="flex gap-2">
-                  <button className="btn-primary" onClick={addCustom}>保存渠道</button>
-                  <button className="btn-secondary" onClick={() => setAddingCustom(false)}>取消</button>
-                </div>
+        ))}
+        <div className="glass p-5">
+          {!addingCustom ? (
+            <button className="btn-secondary" onClick={() => setAddingCustom(true)}>＋ 添加自定义渠道</button>
+          ) : (
+            <div className="space-y-3">
+              <input className="input" placeholder="渠道名称（如 我的 Nube）" value={cName} onChange={(e) => setCName(e.target.value)} />
+              <input className="input" placeholder="BaseURL（OpenAI 兼容，如 https://api.example.com/v1）" value={cBase} onChange={(e) => setCBase(e.target.value)} />
+              <input className="input" placeholder="模型列表，逗号分隔（如 model-a, model-b）" value={cModels} onChange={(e) => setCModels(e.target.value)} />
+              <input className="input" type="password" placeholder="API Key" value={cKey} onChange={(e) => setCKey(e.target.value)} autoComplete="off" />
+              <div className="flex gap-2">
+                <button className="btn-primary" onClick={addCustom}>保存渠道</button>
+                <button className="btn-secondary" onClick={() => setAddingCustom(false)}>取消</button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

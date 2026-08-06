@@ -98,3 +98,24 @@ describe("channels", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+test("multiple custom channels: buildProviders + catalog list all named customs", () => {
+  const keys = {
+    deepseek: { apiKey: "sk-a" },
+    "custom-nube": { apiKey: "sk-1", baseURL: "https://nube/v1", models: ["m1"], name: "我的 Nube" },
+    "custom-other": { apiKey: "sk-2", baseURL: "https://other/v1", models: ["m2", "m3"], name: "备用" },
+  };
+  const presets = [
+    { id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/v1", models: ["deepseek-chat"] },
+    { id: "custom", name: "自定义渠道", baseURL: "", models: [] },
+  ] as Parameters<typeof buildProviders>[0];
+  const providers = buildProviders(presets, keys);
+  const customIds = providers.filter((p) => p.id.startsWith("custom-")).map((p) => p.id).sort();
+  expect(customIds).toEqual(["custom-nube", "custom-other"]);
+  const cat = channelCatalog(presets, keys);
+  expect(cat.presets.map((p) => p.id)).toEqual(["deepseek"]); // custom 模板不进预设目录
+  expect(cat.custom.map((c) => [c.id, c.name])).toEqual([
+    ["custom-nube", "我的 Nube"],
+    ["custom-other", "备用"],
+  ]);
+});

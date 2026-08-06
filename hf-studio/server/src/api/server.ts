@@ -196,34 +196,36 @@ export function createServer(opts: {
 
   app.put("/api/channels/:id", async (c) => {
     const id = c.req.param("id");
-    const preset = opts.config.presetChannels.find((p) => p.id === id);
-    if (!preset) return c.json({ error: "未知渠道" }, 404);
+    // "custom" 模板只是占位，不是真预设——自定义渠道统一走 else 分支（id 可为任意自定义 id 或旧数据 "custom"）
+    const preset = opts.config.presetChannels.find((p) => p.id === id && p.id !== "custom");
     const keys = chStore.load();
-    const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string; baseURL?: string; models?: string[] };
-    // Key 可缺省（仅更新模型时）；但至少要有一个可用 key
+    const body = (await c.req.json().catch(() => ({}))) as { apiKey?: string; baseURL?: string; models?: string[]; name?: string };
+    // Key 可缺省（仅更新模型/名称时）；但至少要有一个可用 key
     const finalKey = body.apiKey ?? keys[id]?.apiKey;
     if (!finalKey || typeof finalKey !== "string") return c.json({ error: "apiKey 不能为空" }, 400);
     const models = Array.isArray(body.models) ? body.models.filter((m): m is string => typeof m === "string" && m.length > 0) : undefined;
-    if (id === "custom") {
-      // 仅更新部分字段时回退到已存值（与上方 apiKey 回退同语义）：用户"获取模型→勾选→保存"
-      // 只提交 models，baseURL 来自创建时输入——校验必须合并已存值，而不是只看请求体。
-      const stored = keys[id];
-      const finalBase = body.baseURL ?? (typeof stored?.baseURL === "string" ? stored.baseURL : "");
+    const stored = keys[id];
+    if (preset) {
+      chStore.save(id, { apiKey: finalKey, ...(models ? { models } : {}) });
+    } else {
+      // 自定义渠道（任意 id）：部分更新回退已存值（"获取模型→勾选→保存"只提交 models）
+      const finalBase = body.baseURL ?? stored?.baseURL ?? "";
       const finalModels = models ?? (Array.isArray(stored?.models) ? stored.models : []);
       if (!finalBase || finalModels.length === 0) {
         return c.json({ error: "自定义渠道需要 baseURL 与至少一个模型" }, 400);
       }
-      chStore.save(id, { apiKey: finalKey, baseURL: finalBase, models: finalModels });
-    } else {
-      chStore.save(id, { apiKey: finalKey, ...(models ? { models } : {}) });
+      const name = typeof body.name === "string" && body.name.trim()
+        ? body.name.trim()
+        : (typeof stored?.name === "string" ? stored.name : undefined);
+      chStore.save(id, { apiKey: finalKey, baseURL: finalBase, models: finalModels, ...(name ? { name } : {}) });
     }
     return c.json(channelCatalog(opts.config.presetChannels, chStore.load()));
   });
 
   app.delete("/api/channels/:id", (c) => {
     const id = c.req.param("id");
-    const preset = opts.config.presetChannels.find((p) => p.id === id);
-    if (!preset) return c.json({ error: "未知渠道" }, 404);
+    const preset = opts.config.presetChannels.find((p) => p.id === id && p.id !== "custom");
+    if (!preset && !chStore.load()[id]) return c.json({ error: "未知渠道" }, 404);
     chStore.remove(id);
     return c.json(channelCatalog(opts.config.presetChannels, chStore.load()));
   });

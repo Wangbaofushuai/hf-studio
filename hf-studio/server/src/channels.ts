@@ -12,9 +12,9 @@ export interface PresetChannel {
   temperature?: number;
 }
 
-/** 用户渠道 key 存储（data/channels.json，gitignored）；custom 渠道含完整定义 */
+/** 用户渠道 key 存储（data/channels.json，gitignored）；自定义渠道含完整定义与可选名称 */
 export interface ChannelKeys {
-  [id: string]: { apiKey: string; baseURL?: string; models?: string[] };
+  [id: string]: { apiKey: string; baseURL?: string; models?: string[]; name?: string };
 }
 
 export function channelsPath(root?: string): string {
@@ -35,7 +35,7 @@ function writeChannelKeys(path: string, keys: ChannelKeys): void {
   writeFileSync(path, JSON.stringify(keys, null, 2) + "\n");
 }
 
-export function saveChannelKey(path: string | undefined, id: string, v: { apiKey: string; baseURL?: string; models?: string[] }): void {
+export function saveChannelKey(path: string | undefined, id: string, v: { apiKey: string; baseURL?: string; models?: string[]; name?: string }): void {
   const p = path ?? channelsPath();
   const keys = loadChannelKeys(p);
   keys[id] = v;
@@ -71,7 +71,7 @@ export async function fetchChannelModels(baseURL: string, apiKey: string): Promi
 export function buildProviders(presets: PresetChannel[], keys: ChannelKeys): LlmProvider[] {
   const out: LlmProvider[] = [];
   for (const preset of presets) {
-    if (preset.id === "custom") continue; // 自定义渠道由下方专用分支处理（其定义在 channels.json）
+    if (preset.id === "custom") continue; // 自定义渠道模板不产出 provider（真实定义在 channels.json）
     const k = keys[preset.id];
     if (!k?.apiKey || k.apiKey === "sk-REPLACE_ME") continue; // 未填 key 的预设不产出 provider
     out.push({
@@ -84,21 +84,22 @@ export function buildProviders(presets: PresetChannel[], keys: ChannelKeys): Llm
       ...(preset.temperature !== undefined ? { temperature: preset.temperature } : {}),
     });
   }
-  const custom = keys.custom;
-  if (custom?.apiKey && custom.baseURL && (custom.models?.length ?? 0) > 0) {
-    out.push({
-      id: "custom",
-      baseURL: custom.baseURL,
-      apiKey: custom.apiKey,
-      models: custom.models ?? [],
-    });
+  // 多自定义渠道：所有非预设 id 且具备 baseURL/key/models 的条目都产出 provider。
+  // 预设 id 集合排除 "custom" 模板——keys.custom 是用户真实的自定义渠道，必须照常产出
+  const presetIds = new Set(presets.filter((p) => p.id !== "custom").map((p) => p.id));
+  for (const [id, k] of Object.entries(keys)) {
+    if (presetIds.has(id)) continue;
+    if (!k?.apiKey || k.apiKey === "sk-REPLACE_ME" || !k.baseURL || !(k.models?.length ?? 0)) continue;
+    out.push({ id, baseURL: k.baseURL, apiKey: k.apiKey, models: k.models ?? [] });
   }
   return out;
 }
 
 /** 渠道目录（含 key 状态，供前端；绝不回传 key 本身） */
 export function channelCatalog(presets: PresetChannel[], keys: ChannelKeys) {
-  const presetsView = presets.map((p) => {
+  const presetIds = new Set(presets.filter((p) => p.id !== "custom").map((p) => p.id));
+  // 预设目录不包含 "custom" 模板（模板只是占位，真实自定义渠道在下方 customs 列表）
+  const presetsView = presets.filter((p) => p.id !== "custom").map((p) => {
     const k = keys[p.id];
     return {
       id: p.id,
@@ -110,11 +111,16 @@ export function channelCatalog(presets: PresetChannel[], keys: ChannelKeys) {
       hasKey: !!(k?.apiKey && k.apiKey !== "sk-REPLACE_ME"),
     };
   });
-  const custom = keys.custom;
-  const customView = custom?.baseURL
-    ? [{ id: "custom", name: "自定义渠道", baseURL: custom.baseURL, models: custom.models ?? [], hasKey: !!custom.apiKey }]
-    : [];
-  return { presets: presetsView, custom: customView };
+  const customs = Object.entries(keys)
+    .filter(([id, k]) => !presetIds.has(id) && !!k.baseURL)
+    .map(([id, k]) => ({
+      id,
+      name: k.name ?? "自定义渠道",
+      baseURL: k.baseURL as string,
+      models: k.models ?? [],
+      hasKey: !!k.apiKey,
+    }));
+  return { presets: presetsView, custom: customs };
 }
 
 /** 迁移旧结构：config.json 若含 `providers`（带 apiKey），把 key 迁入 channels.json，config 重写为新结构。幂等。 */

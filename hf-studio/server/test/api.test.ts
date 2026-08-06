@@ -174,7 +174,7 @@ describe("API", () => {
     // 初始：无 key
     const res0 = await server.fetch(new Request(`${base}/api/channels`));
     const cat0 = (await res0.json()) as { presets: { id: string; name: string; hasKey: boolean }[] };
-    expect(cat0.presets.map((p) => p.id)).toEqual(["fake", "custom"]);
+    expect(cat0.presets.map((p) => p.id)).toEqual(["fake"]); // custom 模板不进预设目录
     expect(cat0.presets.every((p) => !p.hasKey)).toBe(true);
     expect(JSON.stringify(cat0)).not.toContain("sk-");
     // 填 key

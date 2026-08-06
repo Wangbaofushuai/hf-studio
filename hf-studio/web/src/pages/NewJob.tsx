@@ -57,7 +57,7 @@ export default function NewJob() {
   }, []);
 
   const available = cat
-    ? [...cat.presets.filter((p) => p.hasKey), ...cat.custom.filter((c) => c.hasKey)]
+    ? [...cat.presets.filter((p) => p.hasKey && p.id !== "custom"), ...cat.custom.filter((c) => c.hasKey)] // custom 模板不进预设，避免与自定义渠道重复
     : [];
   const selected = available.find((c) => c.id === channelId) ?? null;
 
