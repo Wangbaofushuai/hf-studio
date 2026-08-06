@@ -10,7 +10,7 @@ export default function ModelSelect({ value, onChange, extraProviders }: { value
   }, [models]);
   const all = [...(models?.providers ?? []), ...(extraProviders ?? [])];
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm">
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="input">
       {!all.length && <option value="">（未配置模型，请在下方自定义渠道或 server/config.json 配置）</option>}
       {all.map((p) => p.models.map((m) => (
         <option key={`${p.id}/${m}`} value={`${p.id}/${m}`}>{p.id}/{m}</option>
