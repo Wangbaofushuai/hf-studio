@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ensureCjkFontStack, stripClipAttrs, ensureRootAttrs } from "../src/util/clean-output";
+import { ensureCjkFontStack, stripClipAttrs, ensureRootAttrs, ensureRootWrapper } from "../src/util/clean-output";
 
 const CJK = `font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;`;
 
@@ -131,5 +131,22 @@ describe("ensureRootAttrs", () => {
     const out = ensureRootAttrs(src, { id: "b3", w: 1920, h: 1080 });
     expect(out).toContain(`class="frame" data-composition-id="b3" data-width="1920" data-height="1080"`);
     expect(out).toContain(`const a = 'data-composition-id="x"';`);
+  });
+});
+
+describe("ensureRootWrapper", () => {
+  test("无根 div 时把 template 内容包进规范根 div", () => {
+    const src = `<template><style>#root{}</style><div class="x">内容</div><script>const a = 1;</script></template>`;
+    const out = ensureRootWrapper(src, { id: "beat-1", w: 1080, h: 1920 });
+    expect(out).toContain(`<template>\n<div id="root" data-composition-id="beat-1" data-width="1080" data-height="1920">`);
+    expect(out).toContain(`<style>#root{}</style>`);
+    expect(out).toContain(`</div></template>`);
+    expect(out).toContain(`const a = 1;`); // 脚本原样
+  });
+  test("已有 id=root → 只补属性不包裹", () => {
+    const src = `<template><div id="root"><div>x</div></div></template>`;
+    const out = ensureRootWrapper(src, { id: "b", w: 1, h: 2 });
+    expect(out).toContain(`id="root" data-composition-id="b" data-width="1" data-height="2"`);
+    expect((out.match(/id="root"/g) ?? []).length).toBe(1);
   });
 });

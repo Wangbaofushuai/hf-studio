@@ -4,7 +4,7 @@ import type { StepContext, StepFn, StepResult, Beat } from "../../types";
 import type { LintFinding } from "../../render/service";
 import { generateRootHtml } from "../root-html";
 import { RESOLUTIONS } from "../../render/resolutions";
-import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootAttrs } from "../../util/clean-output";
+import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
 
 const SYSTEM = readFileSync(new URL("../../prompts/build-beat.txt", import.meta.url), "utf8");
 
@@ -98,7 +98,7 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，
       // 直接写盘会让 hyperframes 解析失败——E2E 实测 lint 报 root_missing_composition_id 等）
-      writeFileSync(file, ensureRootAttrs(stripClipAttrs(ensureCjkFontStack(stripCodeFences(content))), { id: beat.id, w, h }));
+      writeFileSync(file, ensureRootWrapper(stripClipAttrs(ensureCjkFontStack(stripCodeFences(content))), { id: beat.id, w, h }));
 
       const lint = await ctx.render.lint();
       // 逐 beat lint 门：过滤"引用尚未写入的合成"类错误（写 beat 过程中必然出现），

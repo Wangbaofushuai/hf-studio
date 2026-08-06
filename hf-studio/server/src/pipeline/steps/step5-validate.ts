@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
-import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootAttrs } from "../../util/clean-output";
+import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
 import { RESOLUTIONS } from "../../render/resolutions";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
@@ -55,9 +55,9 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         reasoningEffort: "medium",
       });
       const beatId = abs.split("/").pop()?.replace(/\.html$/, "") ?? "beat";
-      // 与 step4 同链：修复输出同样必须强制根属性/字体/无 clip（否则同一确定性错误反复 3 次重试，纯耗 LLM）
+      // 与 step4 同链：修复输出同样必须强制根元素/字体/无 clip（否则同一确定性错误反复 3 次重试，纯耗 LLM）
       const { w, h } = RESOLUTIONS[ctx.config.format];
-      writeFileSync(abs, ensureRootAttrs(stripClipAttrs(ensureCjkFontStack(stripCodeFences(fixed))), { id: beatId, w, h }));
+      writeFileSync(abs, ensureRootWrapper(stripClipAttrs(ensureCjkFontStack(stripCodeFences(fixed))), { id: beatId, w, h }));
     }
     check = await ctx.render.check();
   }

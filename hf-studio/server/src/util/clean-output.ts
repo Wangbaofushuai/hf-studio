@@ -80,6 +80,25 @@ export function stripClipAttrs(html: string): string {
   return restoreScript(out);
 }
 
+/** 保证子合成有合法的根元素：优先补属性（ensureRootAttrs），根 div 不存在时
+ *  把 <template> 内容整体包进规范根 div（id="root" + data-composition-id/width/height）。
+ *  LLM 偶发整段漏写根元素（只写 #root{} CSS 无 div）→ lint root_missing_* 反复失败重试；
+ *  这里确定性兜底，幽灵重试不再发生。脚本内容保护不动。 */
+export function ensureRootWrapper(html: string, opts: { id: string; w: number; h: number }): string {
+  if (/<div\b[^>]*\bid="root"/i.test(html)) return ensureRootAttrs(html, opts);
+  const [preScript, restoreScript] = protectScripts(html);
+  const open = `<div id="root" data-composition-id="${opts.id}" data-width="${opts.w}" data-height="${opts.h}">`;
+  const tplEnd = preScript.indexOf("</template>");
+  if (tplEnd >= 0) {
+    const tplStart = preScript.indexOf("<template>");
+    const cut = tplStart >= 0 ? tplStart + "<template>".length : 0;
+    return restoreScript(preScript.slice(0, cut) + "\n" + open + "\n" + preScript.slice(cut, tplEnd) + "\n</div>" + preScript.slice(tplEnd));
+  }
+  const bodyEnd = preScript.indexOf("</body>");
+  if (bodyEnd >= 0) return restoreScript(open + "\n" + preScript.slice(0, bodyEnd) + "\n</div>" + preScript.slice(bodyEnd));
+  return restoreScript(open + "\n" + preScript + "\n</div>");
+}
+
 /** 保证子合成根元素携带 data-composition-id / data-width / data-height（lint 硬性要求）。
  *  LLM 偶尔漏写这些属性 → root_missing_composition_id / root_missing_dimensions 连续失败重试。
  *  流水线本身知道每 beat 的 id 与宽高，这里确定性补齐：目标 = 第一个 id="root" 的 div，
