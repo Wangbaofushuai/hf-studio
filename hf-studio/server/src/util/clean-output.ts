@@ -79,3 +79,24 @@ export function stripClipAttrs(html: string): string {
   out = out.replace(/\s*data-(?:start|duration|track-index)="[^"]*"/g, "");
   return restoreScript(out);
 }
+
+/** 保证子合成根元素携带 data-composition-id / data-width / data-height（lint 硬性要求）。
+ *  LLM 偶尔漏写这些属性 → root_missing_composition_id / root_missing_dimensions 连续失败重试。
+ *  流水线本身知道每 beat 的 id 与宽高，这里确定性补齐：目标 = 第一个 id="root" 的 div，
+ *  找不到则取第一个 <div>；只补缺失的属性，幂等。脚本内容不动（保护）。 */
+export function ensureRootAttrs(html: string, opts: { id: string; w: number; h: number }): string {
+  const [preScript, restoreScript] = protectScripts(html);
+  const attrs = (tag: string): string => {
+    let out = tag;
+    if (!/data-composition-id\s*=/.test(out)) out = out.replace(/\s*>$/, ` data-composition-id="${opts.id}">`);
+    if (!/data-width\s*=/.test(out)) out = out.replace(/\s*>$/, ` data-width="${opts.w}">`);
+    if (!/data-height\s*=/.test(out)) out = out.replace(/\s*>$/, ` data-height="${opts.h}">`);
+    return out;
+  };
+  const rootTag = /<div\b[^>]*\bid="root"[^>]*>/i;
+  const anyDiv = /<div\b[^>]*>/i;
+  const body = rootTag.test(preScript)
+    ? preScript.replace(rootTag, attrs)
+    : preScript.replace(anyDiv, (m) => attrs(m));
+  return restoreScript(body);
+}

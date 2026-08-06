@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ensureCjkFontStack, stripClipAttrs } from "../src/util/clean-output";
+import { ensureCjkFontStack, stripClipAttrs, ensureRootAttrs } from "../src/util/clean-output";
 
 const CJK = `font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;`;
 
@@ -114,5 +114,22 @@ describe("stripClipAttrs", () => {
     expect(a).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
     const b = ensureCjkFontStack(src);
     expect(b).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
+  });
+});
+describe("ensureRootAttrs", () => {
+  test("根 div 缺属性时补齐 composition-id/width/height", () => {
+    const src = `<template><div id="root"><div class="x">内容</div></div></template>`;
+    const out = ensureRootAttrs(src, { id: "beat-1", w: 1080, h: 1920 });
+    expect(out).toContain('id="root" data-composition-id="beat-1" data-width="1080" data-height="1920"');
+  });
+  test("已有属性时幂等不变", () => {
+    const src = `<template><div id="root" data-composition-id="b" data-width="1" data-height="2"><div>x</div></div></template>`;
+    expect(ensureRootAttrs(src, { id: "b", w: 1, h: 2 })).toBe(src);
+  });
+  test("无 id=root 时补到第一个 div；脚本内容不动", () => {
+    const src = `<template><div class="frame"><script>const a = 'data-composition-id="x"';</script></div></template>`;
+    const out = ensureRootAttrs(src, { id: "b3", w: 1920, h: 1080 });
+    expect(out).toContain(`class="frame" data-composition-id="b3" data-width="1920" data-height="1080"`);
+    expect(out).toContain(`const a = 'data-composition-id="x"';`);
   });
 });
