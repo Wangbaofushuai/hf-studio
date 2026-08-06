@@ -31,10 +31,23 @@ const CJK_FONT_FACE = `\n<style data-cjk-font>
  *  - @font-face 注入幂等：已含 `data-cjk-font` 标记则跳过（不重复注入）。
  *  - 注入位置：`</template>` 之前（style 必须留在 template 内）；无 </template> 则退化到 </body> 前；
  *    两者皆无的输入是 CSS 片段而非完整合成文档，保持原样不注入。 */
+/** 把 HTML 中的 <script> 块整体占位保护起来，返回 [保护后的文本, 还原函数]。
+ *  清洗函数（正则替换）绝不该触碰脚本内容——脚本里的字符串若含
+ *  'class="clip"' / 'data-start="…"' / 'font-family: …;' 会被误伤成语法错误。 */
+function protectScripts(html: string): [string, (body: string) => string] {
+  const parts: string[] = [];
+  const body = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, (m) => {
+    parts.push(m);
+    return `\u0000HFSCRIPT${parts.length - 1}\u0000`;
+  });
+  return [body, (b) => b.replace(/\u0000HFSCRIPT(\d+)\u0000/g, (_m, i) => parts[+i])];
+}
+
 export function ensureCjkFontStack(html: string): string {
-  // 保护 @font-face 块（其 font-family 是字体名，不是字体栈，不得归一）
+  // 保护 <script> 与 @font-face 块（前者是 JS 字符串，后者是字体名而非字体栈，均不得归一）
+  const [preScript, restoreScript] = protectScripts(html);
   const faces: string[] = [];
-  let body = html.replace(/@font-face\s*\{[^}]*\}/g, (m) => {
+  let body = preScript.replace(/@font-face\s*\{[^}]*\}/g, (m) => {
     faces.push(m);
     return `\u0000CJKFACE${faces.length - 1}\u0000`;
   });
@@ -44,6 +57,7 @@ export function ensureCjkFontStack(html: string): string {
   const stackPattern = new RegExp(`font-family\\s*:\\s*${CJK_FONT_STACK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*;?`, "i");
   body = body.replace(/font-family\s*:\s*([^;}]+);?/gi, (m) => (stackPattern.test(m) ? m : `font-family: ${CJK_FONT_STACK};`));
   body = body.replace(/\u0000CJKFACE(\d+)\u0000/g, (_m, i) => faces[+i]);
+  body = restoreScript(body);
   if (body.includes("data-cjk-font")) return body;
   if (body.includes("</template>")) return body.replace("</template>", CJK_FONT_FACE + "</template>");
   if (body.includes("</body>")) return body.replace("</body>", CJK_FONT_FACE + "</body>");
@@ -54,12 +68,14 @@ export function ensureCjkFontStack(html: string): string {
  * 只属于宿主槽位（index.html）。实测：子合成内使用 clip 属性触发平台窗口机制，窗口外元素被隐藏，
  * 导出视频大面积空白。本函数把这些属性从 beat HTML 中剥掉（宿主槽位由 root-html.ts 单独生成，不受影响）。 */
 export function stripClipAttrs(html: string): string {
+  // 脚本内容整体保护：JS 字符串里的 'class="clip"' / 'data-start="…"' 不得被误删
+  const [preScript, restoreScript] = protectScripts(html);
   // 1) 从 class 值中移除 "clip"
-  let out = html.replace(/class="([^"]*)\bclip\b([^"]*)"/g, (_m, pre, post) => {
+  let out = preScript.replace(/class="([^"]*)\bclip\b([^"]*)"/g, (_m, pre, post) => {
     const merged = (pre + " " + post).replace(/\s+/g, " ").trim();
     return merged ? `class="${merged}"` : "";
   });
   // 2) 移除 data-start / data-duration / data-track-index
   out = out.replace(/\s*data-(?:start|duration|track-index)="[^"]*"/g, "");
-  return out;
+  return restoreScript(out);
 }

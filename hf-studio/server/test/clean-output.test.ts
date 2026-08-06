@@ -102,4 +102,17 @@ describe("stripClipAttrs", () => {
     const out = stripClipAttrs(`<div class="a" data-x="1">`);
     expect(out).toBe(`<div class="a" data-x="1">`);
   });
+
+  test("脚本内容是字符串时不误伤（class=clip / data-start / font-family 字样）", () => {
+    const src = `<template><div class="clip title" data-start="0.5" data-duration="1" data-track-index="3">标题</div>
+<script>const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'; console.log(s);</script></template>`;
+    const a = stripClipAttrs(src);
+    // HTML 属性被剥：div 不再是 clip
+    expect(a).not.toContain('<div class="clip');
+    expect(a).not.toContain(`data-start="0.5" data-duration="1"`);
+    // 脚本字符串原样保留（唯一保留处）
+    expect(a).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
+    const b = ensureCjkFontStack(src);
+    expect(b).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
+  });
 });

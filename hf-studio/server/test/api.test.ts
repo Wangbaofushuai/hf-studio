@@ -206,6 +206,16 @@ describe("API", () => {
       body: JSON.stringify({ apiKey: "sk-x", baseURL: "https://example.com/v1", models: ["m1"] }),
     }));
     expect(ok.status).toBe(200);
+    // 部分更新：只提交 models（模拟"获取模型→勾选→保存"），baseURL 回退已存值
+    const partial = await server.fetch(new Request(`${base}/api/channels/custom`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-x", models: ["m1", "m2"] }),
+    }));
+    expect(partial.status).toBe(200);
+    const cat = (await partial.json()) as { custom?: { models: string[]; baseURL: string }[] };
+    expect(cat.custom?.[0].models).toEqual(["m1", "m2"]);
+    expect(cat.custom?.[0].baseURL).toBe("https://example.com/v1");
     // 未配置渠道的 test → ok:false
     const test = await server.fetch(new Request(`${base}/api/channels/glm/test`));
     expect(await test.json()).toMatchObject({ ok: false });
