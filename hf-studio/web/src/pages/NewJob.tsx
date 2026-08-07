@@ -33,6 +33,7 @@ export default function NewJob() {
   const [themePrimary, setThemePrimary] = useState("#0071e3");
   const [themeAccent, setThemeAccent] = useState("#ff6b6b");
   const [quality, setQuality] = useState<"standard" | "hd">("standard");
+  const [buildQuality, setBuildQuality] = useState<"fast" | "balanced" | "high">("fast");
   const [voiceover, setVoiceover] = useState(true);
   const [voice, setVoice] = useState("zh-CN-XiaoxiaoNeural");
   const [language, setLanguage] = useState("zh-CN");
@@ -112,6 +113,7 @@ export default function NewJob() {
     form.set("language", language);
     form.set("model", finalModel);
     form.set("renderQuality", quality);
+    form.set("quality", buildQuality);
     if (themeId) {
       form.set("theme", JSON.stringify({
         id: themeId,
@@ -231,6 +233,15 @@ export default function NewJob() {
               <button type="button" data-active={quality === "standard"} onClick={() => setQuality("standard")}>标准</button>
               <button type="button" data-active={quality === "hd"} onClick={() => setQuality("hd")}>高清</button>
             </div>
+          </div>
+          <div className="border-t border-black/10 pt-4 dark:border-white/10">
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">生成速度</label>
+            <div className="segmented">
+              <button type="button" data-active={buildQuality === "fast"} onClick={() => setBuildQuality("fast")}>快速</button>
+              <button type="button" data-active={buildQuality === "balanced"} onClick={() => setBuildQuality("balanced")}>均衡</button>
+              <button type="button" data-active={buildQuality === "high"} onClick={() => setBuildQuality("high")}>高质量</button>
+            </div>
+            <p className="mt-1 text-[11px] text-neutral-400">快速约 1 分钟/片段（默认）；高质量更精致但慢 5-10 倍</p>
           </div>
         </section>
       )}

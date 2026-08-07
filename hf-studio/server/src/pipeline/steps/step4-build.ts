@@ -93,7 +93,7 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         // 用中等档思考：deepseek-v4-flash 实测全量思考 10-25 分钟/beat，medium 档分钟级，质量与耗时平衡
         timeoutMs: 900_000,
         thinking: "enabled",
-        reasoningEffort: "medium",
+        reasoningEffort: ctx.config.quality === "fast" ? "low" : ctx.config.quality === "high" ? "high" : "medium",
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，

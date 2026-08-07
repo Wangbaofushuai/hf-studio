@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getJob, rerunJob, subscribeJob } from "../api";
+import { getJob, rerunJob, subscribeJob, fetchBeats } from "../api";
 import type { JobDetailDto } from "../types";
 import ProgressSteps from "../components/ProgressSteps";
 import ArtifactPanel from "../components/ArtifactPanel";
@@ -16,6 +16,7 @@ export default function JobDetail() {
   const { id = "" } = useParams();
   const [detail, setDetail] = useState<JobDetailDto | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [beats, setBeats] = useState<{ index: number; file: string; size: number; mtime: string; desc: string }[]>([]);
   const esRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -27,6 +28,14 @@ export default function JobDetail() {
     });
     return () => esRef.current?.();
   }, [id]);
+
+  // 片段级构建进度：第 4/5 步期间轮询 /beats
+  useEffect(() => {
+    const step = detail?.job.currentStep;
+    if (step !== 4 && step !== 5) return;
+    const t = setInterval(() => fetchBeats(id).then((r) => setBeats(r.beats)).catch(() => {}), 3000);
+    return () => clearInterval(t);
+  }, [detail?.job.currentStep, id]);
 
   const onRerun = async (step: number) => {
     if (!confirm(`重新生成第 ${step + 1} 步？后续步骤将重新执行。`)) return;
@@ -53,6 +62,22 @@ export default function JobDetail() {
 
       <div className="glass p-4">
         <ProgressSteps steps={steps} currentStep={job.currentStep} />
+          {beats.length > 0 && (
+            <section className="glass p-5">
+              <h3 className="mb-3 text-sm font-semibold text-neutral-600 dark:text-neutral-300">片段构建进度</h3>
+              <ul className="space-y-2">
+                {beats.map((b) => (
+                  <li key={b.file} className="flex items-center gap-3 text-sm">
+                    <span className="w-16 shrink-0 font-mono text-xs text-neutral-500">片段 {b.index}</span>
+                    <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">{b.desc || b.file}</span>
+                    <span className={`shrink-0 text-xs ${b.size === 0 ? "text-amber-500" : "text-green-600 dark:text-green-400"}`}>
+                      {b.size === 0 ? "生成中…" : `已完成 ${(b.size / 1024).toFixed(1)}KB`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
       </div>
 
       <section className="glass p-5">

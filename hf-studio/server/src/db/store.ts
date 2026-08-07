@@ -49,6 +49,10 @@ export class JobStore {
     return id;
   }
 
+  deleteJob(jobId: string): void {
+    this.db.run("DELETE FROM jobs WHERE id = ?", [jobId]);
+  }
+
   getJob(jobId: string): JobRow | null {
     const row = this.db.query("SELECT * FROM jobs WHERE id = ?").get(jobId) as Record<string, unknown> | null;
     return row ? this.mapJob(row) : null;

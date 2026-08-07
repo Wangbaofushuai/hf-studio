@@ -52,7 +52,7 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         seed: 55,
         // 修复同样要求严格遵守 composition 契约：强制思考 + 中等档（与 step4 同理）
         thinking: "enabled",
-        reasoningEffort: "medium",
+        reasoningEffort: ctx.config.quality === "fast" ? "low" : ctx.config.quality === "high" ? "high" : "medium",
       });
       const beatId = abs.split("/").pop()?.replace(/\.html$/, "") ?? "beat";
       // 与 step4 同链：修复输出同样必须强制根元素/字体/无 clip（否则同一确定性错误反复 3 次重试，纯耗 LLM）

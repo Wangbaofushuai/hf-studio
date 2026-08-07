@@ -37,3 +37,6 @@ export function subscribeJob(id: string, onEvent: (e: unknown) => void): () => v
   es.onerror = () => { /* EventSource 自动重连 */ };
   return () => es.close();
 }
+
+export const deleteJob = (id: string) => j<{ ok: boolean }>(fetch(`/api/jobs/${id}`, { method: "DELETE" }));
+export const fetchBeats = (id: string) => j<{ beats: { index: number; file: string; size: number; mtime: string; desc: string }[] }>(fetch(`/api/jobs/${id}/beats`));

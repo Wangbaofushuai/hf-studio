@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { mkdirSync, readdirSync, statSync, createReadStream } from "node:fs";
+import { mkdirSync, readdirSync, statSync, createReadStream, readFileSync, rmSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import type { JobStore } from "../db/store";
 import type { PipelineEngine } from "../pipeline/engine";
@@ -72,6 +72,7 @@ export function createServer(opts: {
     }
     // 渲染清晰度档位：仅 "standard" | "high"
     const renderQuality = String(form.get("renderQuality") ?? "standard");
+    const quality = String(form.get("quality") ?? "fast") as JobConfig["quality"];
     if (renderQuality !== "standard" && renderQuality !== "high") return c.json({ error: "renderQuality 不合法" }, 400);
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
@@ -107,7 +108,7 @@ export function createServer(opts: {
       if (isImg) images.push(safe);
       else audio = safe;
     }
-    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, renderQuality, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
+    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, quality, renderQuality, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
     opts.engine.enqueue(jobId);
     return c.json({ id: jobId }, 201);
   });
@@ -124,6 +125,34 @@ export function createServer(opts: {
     const proj = join(opts.projectsRoot, job.id);
     const artifacts = listArtifacts(proj);
     return c.json({ job, steps, artifacts });
+  });
+
+  app.delete("/api/jobs/:id", (c) => {
+    const jobId = c.req.param("id");
+    if (!/^[a-z0-9-]+$/i.test(jobId)) return c.json({ error: "id 不合法" }, 400);
+    opts.store.deleteJob(jobId);
+    rmSync(join(opts.projectsRoot, jobId), { recursive: true, force: true }); // 磁盘产物一并清理
+    return c.json({ ok: true });
+  });
+
+  /** 片段级进度：SCRIPT.md 描述 + compositions 目录实时状态（构建期间由前端轮询） */
+  app.get("/api/jobs/:id/beats", (c) => {
+    const jobId = c.req.param("id");
+    if (!opts.store.getJob(jobId)) return c.json({ error: "not found" }, 404);
+    const dir = join(opts.projectsRoot, jobId);
+    let script = "";
+    try { script = readFileSync(join(dir, "SCRIPT.md"), "utf8"); } catch { /* 未生成 */ }
+    const descs = new Map<number, string>();
+    for (const m of script.matchAll(/\[Beat\s*(\d+)\]\s*([^\n]+)/g)) descs.set(+m[1], m[2].trim());
+    const beats = readdirSync(join(dir, "compositions"), { withFileTypes: true })
+      .filter((e) => e.isFile() && /^beat-\d+\.html$/.test(e.name))
+      .map((e) => {
+        const st = statSync(join(dir, "compositions", e.name));
+        const idx = Number(e.name.match(/^beat-(\d+)/)?.[1] ?? 0);
+        return { index: idx, file: e.name, size: st.size, mtime: st.mtime.toISOString(), desc: descs.get(idx) ?? "" };
+      })
+      .sort((a, b) => a.index - b.index);
+    return c.json({ beats });
   });
 
   app.post("/api/jobs/:id/rerun", async (c) => {

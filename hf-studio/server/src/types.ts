@@ -32,6 +32,7 @@ export interface JobConfig {
     hue?: { primary?: string; accent?: string }; // 主色/强调色 HEX
   };
   renderQuality?: "standard" | "high";           // 渲染清晰度档位（hyperframes render --quality）；默认 standard
+  quality?: "fast" | "balanced" | "high";        // 生成快慢档：step4/5 思考强度 low/medium/high；默认 fast
 }
 
 export interface Brief {
