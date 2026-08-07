@@ -91,7 +91,8 @@ describe("step5Validate", () => {
     expect(chatCalls).toBe(1); // 每个受影响文件每轮恰好一次修复调用
     expect(userPrompt).toContain("boom"); // finding 消息进入 prompt
     expect(userPrompt).toContain(ORIGINAL); // 文件原内容进入 prompt
-    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toBe("<html>fixed</html>"); // 修复结果写回文件
+    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toContain("<html>fixed</html>"); // 修复结果写回文件
+    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toContain('data-composition-id="beat-1"'); // 根元素强制合规
     expect(r.data.snapshots).toHaveLength(2); // 修复后 check 通过，仍记录快照
   });
 
@@ -132,7 +133,8 @@ describe("step5Validate", () => {
     expect(r.status).toBe("passed");
     expect(chatCalls).toBe(1);
     expect(userPrompt).toContain("boom");
-    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toBe("<html>fixed</html>");
+    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toContain("<html>fixed</html>");
+    expect(readFileSync(join(dir, "compositions", "beat-1.html"), "utf8")).toContain('data-composition-id="beat-1"');
   });
 
   test("findings pointing at directories or files without sourceFile/file are skipped (no EISDIR)", async () => {
