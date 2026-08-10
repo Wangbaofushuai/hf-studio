@@ -68,7 +68,11 @@ export default function NewJob() {
   }, [channelId]);
 
   const customModels = tmpModels.split(",").map((m) => m.trim()).filter(Boolean);
-  const finalModel = model || (tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0 ? `${tmpId}/${customModels[0]}` : "");
+  // 临时自定义渠道填写完整 → 优先用临时渠道模型（前缀 = tmpId = providers.id，保证 model 与渠道一致）。
+  // 旧逻辑 `model || tmp...` 在用户先选中下拉渠道再填临时渠道时，会沿用旧的下拉 model——
+  // 前缀与提交的 providers.id 不匹配 → LLM 请求打到错误渠道（本次事故根因）。
+  const tmpActive = !!(tmpOpen && tmpId && tmpBase && tmpKey && customModels.length > 0);
+  const finalModel = tmpActive ? `${tmpId}/${customModels[0]}` : model;
 
   const canNext = step === 0 ? idea.trim().length > 0 : step === 1 ? Boolean(finalModel) : true;
 
@@ -333,7 +337,7 @@ export default function NewJob() {
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">渠道 / 模型</dt>
                 <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
-                  {finalModel ? `${selected ? selected.name : tmpId} · ${finalModel}` : "未选择"}
+                  {finalModel ? `${tmpActive ? tmpId : selected ? selected.name : tmpId} · ${finalModel}` : "未选择"}
                 </dd>
               </div>
             </dl>
