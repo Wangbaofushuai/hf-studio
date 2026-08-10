@@ -29,29 +29,43 @@ export class LlmGateway {
     // 默认 600s：推理模型（如 deepseek-v4-flash）先思考后输出，长 HTML 生成实测可达 20+ 分钟；
     // 调用方可传 timeoutMs 覆盖（step4 的 beat 生成传 15 分钟）
     const t = timeoutMs ?? this.opts.timeoutMs ?? 600_000;
-    const timer = setTimeout(() => controller.abort(), t);
+    const abortTimer = setTimeout(() => controller.abort(), t);
+    // 双保险超时：Bun 的 fetch 对真实 TLS 长连接挂起时 AbortSignal 中止不可靠（本地 HTTP 正常，
+    // 实测真实长请求 300s 超时不触发），fetch promise 可能永久挂起导致引擎卡死。
+    // 用 Promise.race 保证 timeoutMs 内一定 reject，调用方（引擎重试循环）得以恢复。
+    let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutRace = new Promise<never>((_, reject) => {
+      raceTimer = setTimeout(() => reject(new LlmApiError(`timeout after ${t}ms`, "timeout", true)), t);
+    });
     try {
-      const res = await fetch(`${provider.baseURL.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (res.status === 401 || res.status === 403) throw new LlmApiError(`auth failed (${res.status})`, "auth", false);
-      if (res.status === 429) throw new LlmApiError(`rate limited (${res.status})`, "rate_limit", true);
-      if (res.status >= 500) throw new LlmApiError(`server error (${res.status})`, "server", true);
-      if (!res.ok) throw new LlmApiError(`http ${res.status}: ${await res.text()}`, "server", true);
-      const json = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-      const content = json.choices?.[0]?.message?.content ?? "";
-      return {
-        content,
-        promptTokens: json.usage?.prompt_tokens ?? 0,
-        completionTokens: json.usage?.completion_tokens ?? 0,
-      };
+      return await Promise.race([
+        fetch(`${provider.baseURL.replace(/\/$/, "")}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        }).then(async (res) => {
+          if (res.status === 401 || res.status === 403) throw new LlmApiError(`auth failed (${res.status})`, "auth", false);
+          if (res.status === 429) throw new LlmApiError(`rate limited (${res.status})`, "rate_limit", true);
+          if (res.status >= 500) throw new LlmApiError(`server error (${res.status})`, "server", true);
+          if (!res.ok) throw new LlmApiError(`http ${res.status}: ${await res.text()}`, "server", true);
+          const json = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+          const content = json.choices?.[0]?.message?.content ?? "";
+          return {
+            content,
+            promptTokens: json.usage?.prompt_tokens ?? 0,
+            completionTokens: json.usage?.completion_tokens ?? 0,
+          };
+        }),
+        timeoutRace,
+      ]);
     } catch (e) {
       if (e instanceof LlmApiError) throw e;
       if (e instanceof Error && e.name === "AbortError") throw new LlmApiError(`timeout after ${t}ms`, "timeout", true);
       throw new LlmApiError(`network error: ${e instanceof Error ? e.message : String(e)}`, "network", true);
+    } finally {
+      clearTimeout(abortTimer);
+      if (raceTimer) clearTimeout(raceTimer);
     }
   }
 
@@ -67,6 +81,9 @@ export class LlmGateway {
     // 例如 step4/step5 的 HTML 生成要求严格遵守 composition 契约，强制 thinking:"enabled"
     const thinking = params.thinking ?? provider.thinking;
     if (thinking === "disabled") body.thinking = { type: "disabled" };
+    // 对称透传 enabled：调用方强制开启思考时也显式发送，避免请求缺 thinking 字段让渠道走默认行为。
+    // （deepseek-v4-flash 在未显式指定思考模式时行为不可预期，曾致 step4 生成行为异常）
+    else if (thinking === "enabled") body.thinking = { type: "enabled" };
     // 低档思考：保留契约遵守能力、大幅缩短生成时长（deepseek-v4-flash 实测 10-25 分钟 → 30 秒级）
     if (params.reasoningEffort) body.reasoning_effort = params.reasoningEffort;
     if (params.seed !== undefined) body.seed = params.seed;

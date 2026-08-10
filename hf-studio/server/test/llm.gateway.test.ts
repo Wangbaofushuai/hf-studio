@@ -34,6 +34,45 @@ describe("LlmGateway", () => {
     expect(gw.chatJson({ model: "fake/model-a", messages: [] }, schema)).rejects.toThrow();
   });
 
+  test("chat rejects within timeoutMs when server hangs (never resolves)", async () => {
+    const server = Bun.serve({ port: 39989, fetch: () => new Promise(() => {}) });
+    try {
+      const gw = new LlmGateway([{ id: "hang", baseURL: "http://127.0.0.1:39989/v1", apiKey: "k", models: ["m"] }]);
+      const t0 = Date.now();
+      let err: unknown;
+      try { await gw.chat({ model: "hang/m", messages: [], timeoutMs: 1500 }); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(LlmApiError);
+      expect((err as LlmApiError).retryable).toBe(true);
+      const elapsed = Date.now() - t0;
+      expect(elapsed).toBeGreaterThanOrEqual(1400);
+      expect(elapsed).toBeLessThan(10000);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("chat rejects via timeout race fallback even when fetch ignores abort signal", async () => {
+    // 回归保护：Bun 的 fetch 对真实 TLS 长连接挂起时 AbortSignal 中止不可靠（本地 HTTP 正常、
+    // 实测真实长请求 300s 超时不触发），fetch promise 可能永久挂起。若只依赖 AbortController，
+    // chat 永不 reject → 引擎永久卡死。本测试用忽略 signal 的假 fetch 模拟该场景，
+    // 断言 Promise.race 兜底保证 timeoutMs 内一定 reject。
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch; // 永不 resolve，且忽略 signal
+    try {
+      const gw = new LlmGateway([{ id: "hang", baseURL: "http://hang/v1", apiKey: "k", models: ["m"] }]);
+      const t0 = Date.now();
+      let err: unknown;
+      try { await gw.chat({ model: "hang/m", messages: [], timeoutMs: 1200 }); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(LlmApiError);
+      expect((err as LlmApiError).retryable).toBe(true);
+      const elapsed = Date.now() - t0;
+      expect(elapsed).toBeGreaterThanOrEqual(1100);
+      expect(elapsed).toBeLessThan(10000);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   test("retryChat retries on retryable errors and fails after attempts", async () => {
     let calls = 0;
     const gw = new LlmGateway(mockProviders, {
@@ -83,20 +122,11 @@ describe("LlmGateway", () => {
   });
 
   test("per-call thinking override wins over provider config", async () => {
-    // 渠道默认 disabled，但调用方强制 enabled → 请求不带 thinking 参数（模型正常思考）
-    const gw = new LlmGateway(
-      [{ ...mockProviders[0], thinking: "disabled" }],
-      {
-        transport: mockTransport(async (_p, body) => {
-          expect(body.thinking).toBeUndefined();
-          return { content: "ok" };
-        }),
-      },
-    );
-    await gw.chat({ model: "fake/model-a", messages: [], thinking: "enabled" });
-    // 渠道默认 disabled，调用方也传 disabled → 请求带 thinking:{type:"disabled"}
+    // 渠道默认 disabled，但调用方强制 enabled → 对称发送 thinking:{type:"enabled"}。
+    // 只对 disabled 处理（enabled 不发送）会让请求缺 thinking 字段，deepseek-v4-flash
+    // 走默认行为、行为不可预期——显式透传让渠道按调用方意图执行。
     let seen: unknown;
-    const gw2 = new LlmGateway(
+    const gw = new LlmGateway(
       [{ ...mockProviders[0], thinking: "disabled" }],
       {
         transport: mockTransport(async (_p, body) => {
@@ -105,8 +135,21 @@ describe("LlmGateway", () => {
         }),
       },
     );
+    await gw.chat({ model: "fake/model-a", messages: [], thinking: "enabled" });
+    expect(seen).toEqual({ type: "enabled" });
+    // 渠道默认 disabled，调用方也传 disabled → 请求带 thinking:{type:"disabled"}
+    let seen2: unknown;
+    const gw2 = new LlmGateway(
+      [{ ...mockProviders[0], thinking: "disabled" }],
+      {
+        transport: mockTransport(async (_p, body) => {
+          seen2 = body.thinking;
+          return { content: "ok" };
+        }),
+      },
+    );
     await gw2.chat({ model: "fake/model-a", messages: [], thinking: "disabled" });
-    expect(seen).toEqual({ type: "disabled" });
+    expect(seen2).toEqual({ type: "disabled" });
   });
 
   test("per-call reasoningEffort is forwarded to the request body", async () => {
