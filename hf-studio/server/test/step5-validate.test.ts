@@ -179,4 +179,74 @@ describe("step5Validate", () => {
     expect(r.status).toBe("passed");
     expect(chatCalls).toBe(0); // 没有可修复的真实文件 → 零修复调用
   });
+
+  test("repair resolves absolute sourceFile paths (real check --json emits absolute)", async () => {
+    // 回归：真实 CLI 的 sourceFile 是绝对路径，旧实现 join(projectDir, 绝对路径) 拼出
+    // 错误嵌套路径 → statSync 失败 → 修复被静默跳过 → check 永远不恢复 → 死循环重试。
+    const dir = mkdtempSync(join(tmpdir(), "hf-step5-"));
+    mkdirSync(join(dir, "compositions"), { recursive: true });
+    const ORIGINAL = "<html>broken</html>";
+    writeFileSync(join(dir, "compositions", "beat-1.html"), ORIGINAL);
+    let checkRounds = 0;
+    const render = {
+      check: async () => {
+        checkRounds++;
+        return checkRounds === 1
+          ? { ok: false, summary: { ok: false, runtime: { findings: [{ sourceFile: join(dir, "compositions/beat-1.html"), message: "boom", code: "console_error", severity: "error" }] } } }
+          : { ok: true, summary: { ok: true } };
+      },
+      snapshot: async (at: number[]) => at.map((t) => `/tmp/snap-${t}.png`),
+    };
+    let chatCalls = 0;
+    const llm = {
+      chat: async () => { chatCalls++; return { content: "<html>fixed</html>" }; },
+    };
+    const ctx = { jobId: "j1", projectDir: dir, config: cfg, render, llm, feedback: null, log: () => {} } as unknown as StepContext;
+    const prev = [
+      { step: 0, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 1, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 2, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 3, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 4, status: "passed" as const, artifacts: [], data: { beats: [{ id: "beat-1", startSec: 0, endSec: 4.2 }] }, log: "", attempts: 1 },
+    ];
+    const r = await step5Validate(ctx, prev as never);
+    expect(r.status).toBe("passed");
+    expect(chatCalls).toBe(1); // 绝对路径也修复
+    expect(readFileSync(join(dir, "compositions/beat-1.html"), "utf8")).toContain("<html>fixed</html>");
+  });
+
+  test("repair never touches index.html (host file owned by root-html.ts template)", async () => {
+    // 回归：index.html 是 root-html.ts 确定性生成的宿主文件（root/audio/slot 的 data-start/duration
+    // 已正确生成）。LLM 修复 + stripClipAttrs 会剥掉宿主定时属性 → check 报 missing_data_start
+    // 死循环失败。宿主问题只应由 root-html.ts 保证，fix 循环必须跳过 index.html。
+    const dir = mkdtempSync(join(tmpdir(), "hf-step5-"));
+    const INDEX = '<div id="root" data-composition-id="root" data-start="0" data-duration="9" data-width="1920" data-height="1080"></div>';
+    writeFileSync(join(dir, "index.html"), INDEX);
+    let checkRounds = 0;
+    const render = {
+      check: async () => {
+        checkRounds++;
+        return checkRounds === 1
+          ? { ok: false, summary: { ok: false, runtime: { findings: [{ sourceFile: join(dir, "index.html"), message: "boom", code: "console_error", severity: "error" }] } } }
+          : { ok: true, summary: { ok: true } };
+      },
+      snapshot: async (at: number[]) => at.map((t) => `/tmp/snap-${t}.png`),
+    };
+    let chatCalls = 0;
+    const llm = {
+      chat: async () => { chatCalls++; return { content: "<html>fixed</html>" }; },
+    };
+    const ctx = { jobId: "j1", projectDir: dir, config: cfg, render, llm, feedback: null, log: () => {} } as unknown as StepContext;
+    const prev = [
+      { step: 0, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 1, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 2, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 3, status: "passed" as const, artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 4, status: "passed" as const, artifacts: [], data: { beats: [{ id: "beat-1", startSec: 0, endSec: 4.2 }] }, log: "", attempts: 1 },
+    ];
+    const r = await step5Validate(ctx, prev as never);
+    expect(r.status).toBe("passed");
+    expect(chatCalls).toBe(0); // index.html 不被 LLM 修复
+    expect(readFileSync(join(dir, "index.html"), "utf8")).toBe(INDEX); // 内容原样保留
+  });
 });

@@ -249,4 +249,31 @@ describe("step4Build", () => {
     expect(last.endSec).toBeCloseTo(15, 1);
     expect(r.data.finalEndSec).toBeCloseTo(15, 1);
   });
+
+  test("passes maxTokens to cap LLM output (unbounded generation hangs body read)", async () => {
+    // 回归保护：deepseek-v4-flash 无 max_tokens 时生成超长输出，HTTP 200 但响应 body 永不结束，
+    // res.json() 永久挂起（实测 HTTP 200 后 body 60s+ 不结束）→ 引擎卡死。step4 必须传上限。
+    let seenMax: number | undefined;
+    const llm = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body) => {
+        seenMax = body.max_tokens as number | undefined;
+        const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
+        const m = userMsg.match(/beat-(\d+)/);
+        const id = m ? `beat-${m[1]}` : "beat-1";
+        return { content: BEAT_HTML(id) };
+      }),
+    });
+    const dir = mkdtempSync(join(tmpdir(), "hf-step4-"));
+    writeFileSync(join(dir, "DESIGN.md"), "# DESIGN\n## Visual Theme\n暗色\n## Quick Reference\n#000 #fff\n## Component Stylings\n标题 80px\n## Spacing & Layout\n网格\n## Iteration Guide\n克制");
+    const render = { lint: async () => ({ errorCount: 0, findings: [] }) };
+    const prev: StepOutput[] = [
+      { step: 0, status: "passed", artifacts: [], data: {}, log: "", attempts: 1 },
+      { step: 1, status: "passed", artifacts: [], data: { design: "# DESIGN" }, log: "", attempts: 1 },
+      { step: 2, status: "passed", artifacts: [], data: { storyboard: { beats: [{ id: "beat-1", narration: "第一句", mood: "m", techniques: ["t"], transitions: "tr", assets: [], durationSec: 4.2 }] } }, log: "", attempts: 1 },
+      { step: 3, status: "passed", artifacts: [], data: { boundaries: [{ index: 1, startSec: 0, endSec: 4.2 }] }, log: "", attempts: 1 },
+    ];
+    const ctx = { jobId: "j1", projectDir: dir, config: cfg, llm, render, feedback: null, log: () => {} } as unknown as StepContext;
+    await step4Build(ctx, prev);
+    expect(seenMax).toBeGreaterThan(0);
+  });
 });

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
 import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
 import { RESOLUTIONS } from "../../render/resolutions";
@@ -38,7 +38,14 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
       byFile.get(file)!.push(f);
     }
     for (const [file, list] of byFile) {
-      const abs = join(ctx.projectDir, file);
+      // 真实 CLI 的 sourceFile 是绝对路径：join(projectDir, 绝对路径) 会拼出错误嵌套路径
+      // → statSync 失败 → 修复被静默跳过 → check 永不恢复 → 死循环重试。绝对路径直接用。
+      const abs = isAbsolute(file) ? file : join(ctx.projectDir, file);
+      // index.html 是 root-html.ts 确定性生成的宿主文件（root/audio/slot 的 data-start/duration
+      // 已正确生成）。LLM 修复 + stripClipAttrs 会剥掉宿主定时属性 → check 报
+      // media_missing_data_start / root_composition_missing_data_start 死循环失败。
+      // 宿主问题只应由 root-html.ts 保证；这里只修复 compositions/*.html 子合成。
+      if (abs.endsWith("index.html")) continue;
       // sourceFile 可能指向目录（如 "compositions"）或已不存在的文件：只修复真实存在的普通文件
       if (!statSync(abs, { throwIfNoEntry: false })?.isFile()) continue;
       const content = readFileSync(abs, "utf8");
@@ -50,9 +57,11 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
         ],
         temperature: 0.3,
         seed: 55,
-        // 修复同样要求严格遵守 composition 契约：强制思考 + 中等档（与 step4 同理）
-        thinking: "enabled",
+        // 修复同样要求严格遵守 composition 契约：但与 step4 同理，flash 快速模型的 thinking:enabled
+        // 不稳定（挂起/空输出），统一 thinking:disabled + max_tokens 上限，靠 fix-beat.txt 与 lint 兜底
+        thinking: "disabled",
         reasoningEffort: ctx.config.quality === "fast" ? "low" : ctx.config.quality === "high" ? "high" : "medium",
+        maxTokens: 16_000,
       });
       const beatId = abs.split("/").pop()?.replace(/\.html$/, "") ?? "beat";
       // 与 step4 同链：修复输出同样必须强制根元素/字体/无 clip（否则同一确定性错误反复 3 次重试，纯耗 LLM）

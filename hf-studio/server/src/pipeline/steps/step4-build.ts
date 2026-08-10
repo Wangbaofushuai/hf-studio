@@ -92,8 +92,14 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
         // beat 生成是流水线中最长的输出（完整 HTML 合成）。强制开启思考保证契约遵守，
         // 用中等档思考：deepseek-v4-flash 实测全量思考 10-25 分钟/beat，medium 档分钟级，质量与耗时平衡
         timeoutMs: 900_000,
-        thinking: "enabled",
+        // 强制关闭思考：deepseek-v4-flash 等 flash 快速模型的 thinking:enabled 模式实测不稳定
+        // （偶发挂起 / 思考占满 max_tokens 致 content 为空 → 写出空壳 HTML / 输出时好时坏），
+        // thinking:disabled 下 19-25s 稳定返回完整 HTML（E2E 实测 fast 档 1 分钟/beat）。
+        // 质量由 build-beat.txt 质量红线 + lint 硬门兜底，不依赖思考模式。
+        thinking: "disabled",
         reasoningEffort: ctx.config.quality === "fast" ? "low" : ctx.config.quality === "high" ? "high" : "medium",
+        // 输出上限：防模型无限生成（无 max_tokens 时响应 body 永不结束 → 引擎挂起）。16000 token 足够一个完整 HTML composition。
+        maxTokens: 16_000,
       });
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，
