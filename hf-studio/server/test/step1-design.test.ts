@@ -52,4 +52,30 @@ describe("step1Design", () => {
     expect(r.status).toBe("judge_failed");
     expect(r.judge?.score).toBe(5);
   });
+
+  test("passes a sane timeoutMs to the LLM generation call (hang protection)", async () => {
+    const seen: number[] = [];
+    const llm = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body, timeoutMs) => {
+        seen.push(timeoutMs ?? -1);
+        const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
+        if (userMsg.includes("评审")) {
+          return { content: JSON.stringify({ rubric: { clarity: 8, pacing: 8, visualRichness: 8, match: 8 }, score: 8, feedback: "ok" }) };
+        }
+        return { content: DESIGN };
+      }),
+    });
+    const dir = mkdtempSync(join(tmpdir(), "hf-step1-"));
+    writeFileSync(join(dir, "brief.json"), JSON.stringify(brief));
+    const ctx = {
+      jobId: "j1", projectDir: dir, config: cfg, llm,
+      judge: new Judge(llm, "fake/model-a", 7),
+      store: null as never, render: null as never, tts: null as never,
+      feedback: null, log: () => {},
+    } as unknown as StepContext;
+    await step1Design(ctx, []);
+    // 生成调用与评审调用都应带有限超时（默认 600s 会让挂起渠道卡死整个任务）
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((t) => t === 120_000)).toBe(true);
+  });
 });

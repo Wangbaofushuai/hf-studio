@@ -52,4 +52,15 @@ describe("step0Parse", () => {
     const r = await step0Parse(ctx, []);
     expect(r.status).toBe("gate_failed");
   });
+
+  test("passes a sane timeoutMs to the LLM call (hang protection)", async () => {
+    let seen: number | undefined;
+    const ctx = makeCtx(mockTransport(async (_p, _b, timeoutMs) => {
+      seen = timeoutMs;
+      return { content: briefJson };
+    }));
+    await step0Parse(ctx, []);
+    // 渠道挂起（如失效的 baseURL）时必须在有限时间内失败，而不是默认 600s 无限等待
+    expect(seen).toBe(120_000);
+  });
 });

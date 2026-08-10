@@ -58,6 +58,8 @@ export const step2Storyboard: StepFn = async (ctx: StepContext, prev): Promise<S
         ],
         temperature: 0.7,
         seed: 33,
+        // 分镜+脚本是文本输出，120s 足够；挂起渠道必须在有限时间内失败而不是无限等待
+        timeoutMs: 120_000,
       },
       PayloadSchema,
     );

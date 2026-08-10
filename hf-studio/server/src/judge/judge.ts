@@ -27,6 +27,8 @@ export class Judge {
         ],
         temperature: 0.2,
         seed: 42,
+        // 评审调用挂起同样会卡死任务：120s 内必须返回，超时按评审失败走引擎重试循环
+        timeoutMs: 120_000,
       },
       RATING,
     );

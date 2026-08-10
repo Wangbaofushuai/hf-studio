@@ -107,4 +107,34 @@ describe("step2Storyboard", () => {
     expect(r.judge?.score).toBe(0);
     expect(r.judge?.feedback).toContain("评审器调用失败");
   });
+
+  test("passes a sane timeoutMs to the LLM generation call (hang protection)", async () => {
+    const seen: number[] = [];
+    const llm = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body, timeoutMs) => {
+        seen.push(timeoutMs ?? -1);
+        const userMsg = String((body.messages as { role: string; content: string }[]).at(-1)?.content ?? "");
+        if (userMsg.includes("评审")) {
+          return { content: JSON.stringify({ rubric: { clarity: 8, pacing: 8, visualRichness: 8, match: 8 }, score: 8, feedback: "ok" }) };
+        }
+        return { content: goodPayload };
+      }),
+    });
+    const dir = mkdtempSync(join(tmpdir(), "hf-step2-"));
+    writeFileSync(join(dir, "DESIGN.md"), "# DESIGN\n## Visual Theme\n暗色\n## Quick Reference\n#000 #fff\n## Component Stylings\n标题\n## Spacing & Layout\n网格\n## Iteration Guide\n克制");
+    const prev: StepOutput[] = [
+      { step: 0, status: "passed", artifacts: [], data: { brief }, log: "", attempts: 1 },
+      { step: 1, status: "passed", artifacts: [], data: { design: "# DESIGN" }, log: "", attempts: 1 },
+    ];
+    const ctx = {
+      jobId: "j1", projectDir: dir, config: cfg, llm,
+      judge: new Judge(llm, "fake/model-a", 7),
+      store: null as never, render: null as never, tts: null as never,
+      feedback: null, log: () => {},
+    } as unknown as StepContext;
+    await step2Storyboard(ctx, prev);
+    // 生成调用与评审调用都应带有限超时（默认 600s 会让挂起渠道卡死整个任务）
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((t) => t === 120_000)).toBe(true);
+  });
 });

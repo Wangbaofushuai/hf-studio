@@ -37,6 +37,8 @@ export const step1Design: StepFn = async (ctx: StepContext, prev): Promise<StepR
     ],
     temperature: 0.7,
     seed: 22,
+    // DESIGN.md 是文本输出，120s 足够；挂起渠道必须在有限时间内失败而不是无限等待
+    timeoutMs: 120_000,
   });
   const design = content.trim();
   writeFileSync(join(ctx.projectDir, "DESIGN.md"), design);

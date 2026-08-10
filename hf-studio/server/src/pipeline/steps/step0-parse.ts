@@ -38,6 +38,9 @@ export const step0Parse: StepFn = async (ctx: StepContext): Promise<StepResult> 
         ],
         temperature: 0.4,
         seed: 11,
+        // brief 是短文本输出，120s 足够；挂起渠道（失效 baseURL）必须在有限时间内失败，
+        // 而不是默认 600s 无限等待让任务卡在 running
+        timeoutMs: 120_000,
       },
       BriefSchema,
     );

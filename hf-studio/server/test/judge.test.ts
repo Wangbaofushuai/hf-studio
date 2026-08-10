@@ -32,4 +32,18 @@ describe("Judge", () => {
     const r = await judge.score("storyboard", "# STORYBOARD\n...", brief);
     expect(judge.passes(r)).toBe(false);
   });
+
+  test("passes a sane timeoutMs to the LLM call (hang protection)", async () => {
+    let seen: number | undefined;
+    const gw = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, _b, timeoutMs) => {
+        seen = timeoutMs;
+        return { content: JSON.stringify({ rubric: { clarity: 8, pacing: 8, visualRichness: 8, match: 8 }, score: 8, feedback: "不错" }) };
+      }),
+    });
+    const judge = new Judge(gw, "fake/model-a", 7);
+    await judge.score("design", "# DESIGN\n...", brief);
+    // 评审器挂起同样卡死任务，必须有限超时
+    expect(seen).toBe(120_000);
+  });
 });
