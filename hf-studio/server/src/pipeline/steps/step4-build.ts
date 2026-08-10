@@ -5,6 +5,9 @@ import type { LintFinding } from "../../render/service";
 import { generateRootHtml } from "../root-html";
 import { RESOLUTIONS } from "../../render/resolutions";
 import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
+// 注意：SYSTEM 提示词在模块加载时通过 readFileSync 读取（src/prompts/build-beat.txt）。
+// bun --watch 不监控 .txt，改动提示词后需触发本文件内容变化（或重启服务）才能生效。
+// 2026-08-10 提示词已强化：布局纪律（防 content_overlap）+ 素材硬约束（防幻觉素材）+ 脚本安全（防 root.getElementById）。
 
 const SYSTEM = readFileSync(new URL("../../prompts/build-beat.txt", import.meta.url), "utf8");
 

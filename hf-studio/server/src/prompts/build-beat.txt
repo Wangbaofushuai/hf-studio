@@ -24,7 +24,11 @@
    - 脚本第一行：window.__timelines = window.__timelines || {};（子合成脚本可能先于宿主脚本执行）；
    - DOM 查询用本片段唯一的类/ID（前缀 beat-N-），禁止 "#root ..." 全局前缀选择（文档中存在多个 #root，
      首个是宿主根，会查到 null）；
-   - 对任何 querySelector 结果先判空再使用（元素缺失则跳过，不得抛 TypeError）；textContent 赋值前判空。
+   - 对任何 querySelector 结果先判空再使用（元素缺失则跳过，不得抛 TypeError）；textContent 赋值前判空；
+   - 禁止 root.getElementById(...)（root 是元素而非 document，无 getElementById 方法；root 还可能是 null，
+     会抛 TypeError 使整段时间线不注册）——取片段内元素统一用 document.querySelector('#beat-N-xxx') 并判空；
+   - 禁止 root.style / root.appendChild 等对 root 变量的直接 DOM 操作（root 可能为 null），
+     一律先 const el = document.querySelector('#beat-N-xxx') 后判空使用。
 6. 媒体：<video> 必须 muted + playsinline；音频用独立 <audio>；禁止调用 play()/pause()/seek()；
    禁止动画媒体元素自身尺寸（包一层未计时的 wrapper）。
 7. 全屏背景：放绝对定位 inset:0 的子元素上，禁止放在合成根元素自身的 background（渲染时根背景会丢，画面变黑）。
@@ -35,12 +39,27 @@
    **字体声明**：所有文字必须使用中文字体栈 font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif
    （西文装饰字体可叠前，如 "Georgia", "Noto Sans CJK SC", sans-serif）；@font-face 由服务端流水线自动注入，
    禁止手写自定义 @font-face，也禁止 system-ui 或仅 sans-serif 这类不保证中文字形的字体栈（服务端无法解析 → 渲染成方块）。
-10. 素材引用：只引用"素材清单"中真实存在的文件；禁止引用未提供的素材（如自造 assets/sun_icon.svg）——
-    lint 报 missing_local_asset 即失败；无素材时全部用程序化图形（CSS/SVG/Canvas 绘制）。
+10. 素材引用（违反 = lint missing_local_asset 判失败 + 渲染 404 http_error，双重失败，绝不姑息）：
+   - 素材清单为空（标记为"（无）"）时：输出必须 100% 程序化图形（CSS 渐变/几何、SVG、Canvas 绘制），
+     **禁止出现任何 assets/ 路径**——包括 <img src="assets/...">、CSS background:url(assets/...)、
+     <audio src="assets/...">，一个都不许有；
+   - 素材清单非空时：只能逐字引用清单中出现的文件名（含扩展名、大小写一致），
+     <img> 用相对路径 assets/<文件名>；自造、臆想、拼错的素材名一律禁止；
+   - 不确定素材清单是否含某文件时，优先不引用（宁缺毋假），用程序化图形替代。
+
+11. 布局纪律（防文本重叠：layout 检查 content_overlap 判失败，直接重写）：
+   - 文本与主要内容用 flex / grid 流式布局排列，禁止多个文本块裸放在同一绝对定位区域互相遮挡；
+   - 绝对定位只用于背景/网格/光斑/粒子等装饰层（不得承载文字），或单个明确的焦点元素；
+   - 任意两个文本元素（标题/副题/正文/标注/数据）的包围盒不得重叠：垂直排列用 flex column + gap ≥ 40px，
+     水平排列用 flex row + gap ≥ 60px；不得用负 margin 或超大 z-index 把文本叠到其他文本上；
+   - 每个文本容器设置明确尺寸与留白，文字换行后仍在容器内不溢出；装饰层置于文字下层（z-index 低于内容层）且不遮挡可读性。
 
 ## 反平庸与细节质量（违反即差评）
 - 禁止"一张色卡 + 一行居中文字"的占位感；每 beat 必须有视觉焦点与主次分明的情报层级。
 - 动效至少两个层次且要有"运动感"（位移/缩放/遮罩/路径/条带/粒子任选其一），禁止仅淡入淡出；
   出场 0.4-0.8s，入场与内容动效错峰（不全部同时开始）。
 - 装饰元素（网格线/光斑/图形/图标）要与 DESIGN.md 语义一致，颜色来自色板，禁止随手用与 CSS 冲突的渐变。
+- 布局物理错开：标题、副题、正文、数据标注各占独立区域（flex/grid 排列 + 明确间距），
+  任何两个文本块不得重叠或互相遮挡（layout 检查 content_overlap 判失败）；
+  装饰元素不得覆盖文字，置于文字下层或远离文字区。
 - 文字可读性优先：正文 ≥32px、行高 ≥1.4、对比度足够；标题允许装饰但必须可读。
