@@ -52,6 +52,9 @@ if (import.meta.main) {
   const server = createServer({ store, engine, config, projectsRoot: PROJECTS_ROOT, tts });
   const port = Number(process.env.PORT ?? 8787);
   // 公网部署：显式绑 0.0.0.0（默认即全网卡，写明以明确意图）
-  Bun.serve({ hostname: "0.0.0.0", port, fetch: server.fetch });
+  // idleTimeout: 0 —— 禁用请求级空闲超时。Bun 默认 10s 会掐断 SSE 长连接（/api/jobs/:id/events），
+  // 导致前端 EventSource 反复断开、进度不刷新。SSE 需要长连接，其余 API 请求都在 handler 内快速返回，
+  // 引擎的慢 LLM 调用在后台事件循环执行，不经由本 server 请求通道，故禁用空闲超时是安全的。
+  Bun.serve({ hostname: "0.0.0.0", port, idleTimeout: 0, fetch: server.fetch });
   console.log(`[hf-studio] listening on http://localhost:${port}`);
 }
