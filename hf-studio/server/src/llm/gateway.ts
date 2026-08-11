@@ -80,12 +80,20 @@ export class LlmGateway {
     // 生成速度提升一个数量级）；调用方可用 params.thinking 覆盖——
     // 例如 step4/step5 的 HTML 生成要求严格遵守 composition 契约，强制 thinking:"enabled"
     const thinking = params.thinking ?? provider.thinking;
-    if (thinking === "disabled") body.thinking = { type: "disabled" };
-    // 对称透传 enabled：调用方强制开启思考时也显式发送，避免请求缺 thinking 字段让渠道走默认行为。
-    // （deepseek-v4-flash 在未显式指定思考模式时行为不可预期，曾致 step4 生成行为异常）
-    else if (thinking === "enabled") body.thinking = { type: "enabled" };
-    // 低档思考：保留契约遵守能力、大幅缩短生成时长（deepseek-v4-flash 实测 10-25 分钟 → 30 秒级）
-    if (params.reasoningEffort) body.reasoning_effort = params.reasoningEffort;
+    if (thinking === "disabled") {
+      body.thinking = { type: "disabled" };
+      // 思考关闭时 effort 无意义；部分渠道（火山方舟 ark）直接拒绝 reasoning_effort +
+      // thinking:disabled 组合（400 InvalidParameter），故此时一律省略 reasoning_effort。
+    } else if (thinking === "enabled") {
+      // 对称透传 enabled：调用方强制开启思考时也显式发送，避免请求缺 thinking 字段让渠道走默认行为。
+      // （deepseek-v4-flash 在未显式指定思考模式时行为不可预期，曾致 step4 生成行为异常）
+      body.thinking = { type: "enabled" };
+      // 仅思考模式下 effort 才有效且被渠道接受，放这里一并发送
+      if (params.reasoningEffort) body.reasoning_effort = params.reasoningEffort;
+    } else if (params.reasoningEffort) {
+      // 未显式声明思考模式（thinking 与渠道都未配置）：同样省略 effort（该组合在部分渠道无效），
+      // 不发送。若未来需要在此场景下发 effort，应同时显式开启 thinking。
+    }
     if (params.seed !== undefined) body.seed = params.seed;
     if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
     const transport = this.opts.transport ?? this.defaultTransport.bind(this);

@@ -152,7 +152,7 @@ describe("LlmGateway", () => {
     expect(seen2).toEqual({ type: "disabled" });
   });
 
-  test("per-call reasoningEffort is forwarded to the request body", async () => {
+  test("per-call reasoningEffort is forwarded to the request body when thinking is enabled", async () => {
     let seen: unknown;
     const gw = new LlmGateway(mockProviders, {
       transport: mockTransport(async (_p, body) => {
@@ -160,8 +160,36 @@ describe("LlmGateway", () => {
         return { content: "ok" };
       }),
     });
-    await gw.chat({ model: "fake/model-a", messages: [], reasoningEffort: "low" });
+    await gw.chat({ model: "fake/model-a", messages: [], thinking: "enabled", reasoningEffort: "low" });
     expect(seen).toBe("low");
+  });
+
+  test("reasoning_effort is omitted when thinking is disabled (ark rejects low + disabled)", async () => {
+    // 回归：火山方舟 ark API 对 reasoning_effort + thinking:{type:"disabled"} 的组合
+    // 返回 400 InvalidParameter（deepseek 官方接受、ark 拒绝）。思考关闭时 effort 无意义，
+    // 必须省略该参数，避免构建步骤整批失败。
+    let seen: unknown = "unset";
+    const gw = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body) => {
+        seen = body.reasoning_effort;
+        return { content: "ok" };
+      }),
+    });
+    await gw.chat({ model: "fake/model-a", messages: [], thinking: "disabled", reasoningEffort: "low" });
+    expect(seen).toBeUndefined();
+  });
+
+  test("reasoning_effort is omitted when thinking is unset (no thinking param at all)", async () => {
+    // 未显式声明思考模式时同样省略 effort（该组合在部分渠道无效）
+    let seen: unknown = "unset";
+    const gw = new LlmGateway(mockProviders, {
+      transport: mockTransport(async (_p, body) => {
+        seen = body.reasoning_effort;
+        return { content: "ok" };
+      }),
+    });
+    await gw.chat({ model: "fake/model-a", messages: [], reasoningEffort: "medium" });
+    expect(seen).toBeUndefined();
   });
 
   test("unknown provider throws", async () => {
