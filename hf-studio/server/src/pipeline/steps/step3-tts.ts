@@ -7,9 +7,12 @@ import { probeMedia } from "../../util/ffprobe";
 
 export { estimateSec };
 
-// 相邻 beat 之间的静默间隙（秒）：ffprobe 真实时长逐 beat 累计 + 固定间隙，
-// 使"视频比配音先结束"不再发生——边界来自真实音频时长，而非词级时间戳末尾（偏短）
-const REAL_GAP_SEC = 0.25;
+// 相邻 beat 之间的静默间隙（秒）：必须为 0。
+// narration.wav 是各 beat 音频用 ffmpeg -c copy 无缝拼接（无静音插入），视频时间窗必须与其完全对齐；
+// 若视频边界插入固定间隙，间隙处没有任何 beat 内容 → 渲染露出宿主黑底 → 片段切换处黑屏闪烁，
+// 且视频时间轴比音频每段慢 gap（音画漂移）。早期用词级时间戳（偏短）才需要 gap 补偿，
+// 现在边界来自 ffprobe 真实音频时长（不偏短），无需补偿。
+const REAL_GAP_SEC = 0;
 
 export const step3Tts: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
   const beats = (prev[2]?.data.storyboard as { beats: Beat[] } | undefined)?.beats ?? [];

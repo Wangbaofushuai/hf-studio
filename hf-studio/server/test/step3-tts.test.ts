@@ -78,11 +78,11 @@ describe("step3Tts", () => {
     expect(existsSync(join(dir, "assets", "narration.wav"))).toBe(true);
     const boundaries = r.data.boundaries as { index: number; startSec: number; endSec: number }[];
     expect(boundaries).toHaveLength(2);
-    // 真实边界：start = 上一 end + 0.25 间隙；end = start + 实测秒数
+    // 视频边界必须与音频无缝拼接一致（无 gap）——若插入间隙，切换处露出宿主黑底导致黑屏 + 音画不同步
     expect(boundaries[0]).toMatchObject({ startSec: 0, endSec: 0.9 });
-    expect(boundaries[1].startSec).toBeCloseTo(0.9 + 0.25, 1);
-    expect(boundaries[1].endSec).toBeCloseTo(0.9 + 0.25 + 1.1, 1); // 2.25
-    expect(r.data.realTotalSec).toBeCloseTo(2.25, 1);
+    expect(boundaries[1].startSec).toBeCloseTo(0.9, 1);
+    expect(boundaries[1].endSec).toBeCloseTo(0.9 + 1.1, 1); // 2.0
+    expect(r.data.realTotalSec).toBeCloseTo(2.0, 1);
   });
 
   test("voiceover: audio duration deviating >30% from estimate returns gate_failed", async () => {
@@ -112,7 +112,7 @@ describe("step3Tts", () => {
     const ctx = {
       jobId: "j1", projectDir: dir, config: cfg,
       tts, feedback: null, log: () => {},
-      // ffprobe mock：实测合计 2.25s（0.9+0.25+1.1），与字数估算 4.5s 偏差 50% > 30% → 门用 realTotal 判失败
+      // ffprobe mock：实测合计 2.0s（0.9+1.1，无间隙），与字数估算 4.5s 偏差 56% > 30% → 门用 realTotal 判失败
       _probeMedia: async (wav: string) => wav.includes("beat-1")
         ? { durationSec: 0.9, hasAudio: true, hasVideo: false }
         : { durationSec: 1.1, hasAudio: true, hasVideo: false },
