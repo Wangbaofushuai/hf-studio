@@ -6,7 +6,7 @@ import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
   checkDeps, which, resolveProjectRoot, isPrivateIp, installCheck,
-  findGitRoot,
+  findGitRoot, missingChromeRuntimeLibs,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -138,6 +138,63 @@ describe("vd core", () => {
     const ok = await installCheck(root, dep, run as never);
     expect(ok).toBe(true);
     expect(called).toBe("apt-get install -y fonts-noto-cjk");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("missingChromeRuntimeLibs reports all libs when ldconfig is empty", async () => {
+    const run = async () => ({ code: 1, stdout: "" });
+    const missing = await missingChromeRuntimeLibs(run as never);
+    expect(missing.length).toBeGreaterThan(0);
+    expect(missing).toContain("libnss3.so");
+    expect(missing).toContain("libXcomposite.so.1");
+  });
+
+  test("missingChromeRuntimeLibs only reports absent libs", async () => {
+    const libs = ["libnss3.so", "libnspr4.so", "libXcomposite.so.1"];
+    const stdout = libs.map((l) => `\t${l} (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/${l}`).join("\n");
+    const run = async () => ({ code: 0, stdout });
+    const missing = await missingChromeRuntimeLibs(run as never);
+    expect(missing.length).toBeGreaterThan(0);
+    expect(missing).not.toContain("libnss3.so");
+  });
+
+  test("checkDeps flags missing Chrome runtime libs as host-affecting", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    writeFileSync(join(root, "server", "config.json"), JSON.stringify({ providers: [{ apiKey: "sk-REAL" }] }));
+    const run = async (cmd: string, args: string[]) =>
+      ({ code: cmd === "ldconfig" ? 0 : 1, stdout: cmd === "ldconfig" ? "\tlibnss3.so (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libnss3.so" : "" });
+    const deps = await checkDeps(root, run as never);
+    const chromeLibs = deps.find((d) => d.name === "Chrome 运行库");
+    expect(chromeLibs?.ok).toBe(false);
+    expect(chromeLibs?.hostAffects).toBe(true);
+    expect(chromeLibs?.detail).toContain("缺失");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("checkDeps passes when all Chrome runtime libs are present", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    writeFileSync(join(root, "server", "config.json"), JSON.stringify({ providers: [{ apiKey: "sk-REAL" }] }));
+    const libs = ["libnss3.so", "libnspr4.so", "libatk-1.0.so.0", "libatk-bridge-2.0.so.0", "libcups.so.2", "libdrm.so.2", "libxkbcommon.so.0", "libatspi.so.0", "libXcomposite.so.1", "libXdamage.so.1", "libXfixes.so.3", "libXrandr.so.2", "libgbm.so.1", "libxcb.so.1", "libxkbcommon-x11.so.0", "libasound.so.2"];
+    const stdout = libs.map((l) => `\t${l} (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/${l}`).join("\n");
+    const run = async (cmd: string, args: string[]) =>
+      ({ code: cmd === "ldconfig" ? 0 : 1, stdout: cmd === "ldconfig" ? stdout : "" });
+    const deps = await checkDeps(root, run as never);
+    expect(deps.find((d) => d.name === "Chrome 运行库")?.ok).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("installCheck installs Chrome runtime packages via apt", async () => {
+    const root = tmpRoot();
+    let called = "";
+    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "" }; };
+    const dep = { name: "Chrome 运行库", ok: false, hostAffects: true, action: "apt" };
+    const ok = await installCheck(root, dep, run as never);
+    expect(ok).toBe(true);
+    expect(called).toContain("apt-get install -y");
+    expect(called).toContain("libnss3");
+    expect(called).toContain("libxkbcommon-x11-0");
     rmSync(root, { recursive: true, force: true });
   });
 });

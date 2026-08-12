@@ -203,8 +203,38 @@ export async function hasCjkFont(run: CmdRunner = defaultRunner): Promise<boolea
   return r.code === 0 && r.stdout.trim().length > 0;
 }
 
+// ─────────────────────────── Chrome 运行库检测 ───────────────────────────
+
+/** headless Chrome（chrome-headless-shell）运行时依赖的系统共享库。
+ *  二进制已下载但缺这些库时启动即报 "error while loading shared libraries"，渲染/快照全挂。 */
+export const CHROME_RUNTIME_LIBS = [
+  "libnss3.so", "libnspr4.so", "libatk-1.0.so.0", "libatk-bridge-2.0.so.0",
+  "libcups.so.2", "libdrm.so.2", "libxkbcommon.so.0", "libatspi.so.0",
+  "libXcomposite.so.1", "libXdamage.so.1", "libXfixes.so.3", "libXrandr.so.2",
+  "libgbm.so.1", "libxcb.so.1", "libxkbcommon-x11.so.0", "libasound.so.2",
+];
+
+/** 对应 Debian/Ubuntu 包名（apt-get install 一次装齐） */
+export const CHROME_RUNTIME_PKGS = [
+  "libnss3", "libnspr4", "libatk1.0-0", "libatk-bridge2.0-0", "libcups2", "libdrm2",
+  "libxkbcommon0", "libatspi2.0-0", "libxcomposite1", "libxdamage1", "libxfixes3",
+  "libxrandr2", "libgbm1", "libxcb1", "libxkbcommon-x11-0", "libasound2",
+];
+
+/** 通过 `ldconfig -p` 检测缺失的 Chrome 运行库；返回缺失列表（空数组 = 全齐） */
+export async function missingChromeRuntimeLibs(run: CmdRunner = defaultRunner): Promise<string[]> {
+  const r = await run("ldconfig", ["-p"]);
+  const present = new Set<string>();
+  for (const line of r.stdout.split("\n")) {
+    const m = /=>\s+(\S+)$/.exec(line.trim());
+    if (m) present.add(m[1].split("/").pop() ?? "");
+  }
+  return CHROME_RUNTIME_LIBS.filter((lib) => !present.has(lib));
+}
+
 export async function checkDeps(root: string, run: CmdRunner = defaultRunner): Promise<DepCheck[]> {
   const hasChrome = existsSync(join(process.env.HOME ?? "", ".cache", "hyperframes", "chrome"));
+  const missingLibs = await missingChromeRuntimeLibs(run);
   return [
     {
       name: "bun", ok: await which("bun", run), hostAffects: true,
@@ -226,6 +256,12 @@ export async function checkDeps(root: string, run: CmdRunner = defaultRunner): P
     {
       name: "Chrome Headless", ok: hasChrome, hostAffects: true,
       action: "hyperframes browser ensure（下载到 ~/.cache，用户级缓存）",
+    },
+    {
+      name: "Chrome 运行库",
+      ok: missingLibs.length === 0, hostAffects: true,
+      action: `apt-get install -y ${CHROME_RUNTIME_PKGS.join(" ")}（系统级安装，需 root）`,
+      detail: missingLibs.length > 0 ? `缺失：${missingLibs.join(", ")}` : undefined,
     },
     {
       name: "中文字体（CJK）", ok: await hasCjkFont(run), hostAffects: true,
@@ -255,6 +291,8 @@ export async function installCheck(root: string, check: DepCheck, run: CmdRunner
       const bin = join(root, "server", "node_modules", ".bin", "hyperframes");
       return (await run(bin, ["browser", "ensure"], { cwd: join(root, "server") })).code === 0;
     }
+    case "Chrome 运行库":
+      return (await run("apt-get", ["install", "-y", ...CHROME_RUNTIME_PKGS])).code === 0;
     case "中文字体（CJK）":
       return (await run("apt-get", ["install", "-y", "fonts-noto-cjk"])).code === 0;
     case "bun":
