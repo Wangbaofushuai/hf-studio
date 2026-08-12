@@ -13,7 +13,7 @@
 # 卸载：rm -rf "$HOME/hf-studio" /usr/local/bin/vd
 set -e
 
-REPO_URL="https://github.com/Wangbaofushuai/hf-studio.git"
+REPO_URL="${HF_STUDIO_REPO:-https://github.com/Wangbaofushuai/hf-studio.git}"
 INSTALL_DIR="${HF_STUDIO_DIR:-$HOME/hf-studio}"
 VD_LINK="/usr/local/bin/vd"
 
