@@ -22,3 +22,6 @@ coverage/
 
 # 本地配置（含密钥占位），不提交
 hf-studio/server/config.json
+
+# git worktree（隔离开发工作区）
+.worktrees/
