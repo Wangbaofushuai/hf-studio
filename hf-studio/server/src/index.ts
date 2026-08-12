@@ -38,7 +38,9 @@ export function buildEngine(store: JobStore = createStore(), config: AppConfig =
     render: (projectDir: string) => new RenderService(projectDir),
     tts: new TtsService(),
   };
-  return new PipelineEngine({ store, steps, services, projectRoot: PROJECTS_ROOT });
+  // 并发上限：HF_STUDIO_CONCURRENCY（默认 2，钳制 ≥1）；4 核 7.8G 下 2 个渲染并行是安全值
+  const maxConcurrency = Math.max(1, Number(process.env.HF_STUDIO_CONCURRENCY ?? 2) || 2);
+  return new PipelineEngine({ store, steps, services, projectRoot: PROJECTS_ROOT, maxConcurrency });
 }
 
 if (import.meta.main) {
