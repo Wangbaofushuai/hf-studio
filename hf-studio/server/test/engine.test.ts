@@ -122,7 +122,7 @@ describe("PipelineEngine", () => {
       },
       async (ctx) => { order.push(`s1:${ctx.jobId}`); return { status: "passed", artifacts: [], data: {}, log: "ok" }; },
     ];
-    const engine = new PipelineEngine({ store, steps, services: { render: () => ({}) } as unknown as Services, projectRoot: dir });
+    const engine = new PipelineEngine({ store, steps, services: { render: () => ({}) } as unknown as Services, projectRoot: dir, maxConcurrency: 1 });
 
     // 先让 rerunId 完整跑完，作为稍后 rerun 的目标
     const rerunId = store.createJob(cfg);

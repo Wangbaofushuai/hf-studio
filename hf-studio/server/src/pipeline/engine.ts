@@ -11,14 +11,22 @@ import type { JobStatus, StepContext, StepFn, StepId, StepOutput, StepResult } f
 export interface Services {
   llm: LlmGateway;
   judge: Judge;
-  judgeModel?: string;                                            // 配置的评审模型（可为空 → 按任务默认模型）
-  baseProviders?: LlmProvider[];                                  // 内置渠道（config.json 预设 + 用户 key）
+  judgeModel?: string;
+  baseProviders?: LlmProvider[];
   render: (projectDir: string) => RenderService;
   tts: TtsService;
 }
 export type EngineEvent =
   | { type: "job_status"; jobId: string; status: JobStatus; currentStep: StepId | null; message: string }
   | { type: "step_status"; jobId: string; step: StepId; status: "running" | "passed" | "failed"; log: string };
+
+export interface EngineOptions {
+  store: JobStore;
+  steps: StepFn[];
+  services: Services;
+  projectRoot: string;
+  maxConcurrency?: number; // 并发上限（默认 2）；≤1 退化为串行
+}
 
 const MAX_HARD_RETRIES = 3;
 const MAX_JUDGE_RETRIES = 2;
@@ -34,45 +42,50 @@ export function mergeProviders(base: LlmProvider[], custom?: LlmProvider[]): Llm
 }
 
 export class PipelineEngine {
-  // 单飞（single-flight）：一次只跑一轮 drain。与简版 busy 标志不同，busy 时后续
-  // processNext() 直接返回会丢掉"等待"语义（rerunFrom → enqueue 抢先置忙，调用方
-  // await processNext() 落空）。这里 busy 时返回在途 drain 的同一个 promise，使
-  // `await processNext()` 真正等到当前轮处理结束。
-  private running: Promise<void> | null = null;
+  private active = new Map<string, Promise<void>>();
+  private maxConcurrency: number;
   private listeners: ((e: EngineEvent) => void)[] = [];
-  constructor(private opts: { store: JobStore; steps: StepFn[]; services: Services; projectRoot: string }) {}
+  constructor(private opts: EngineOptions) {
+    this.maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
+  }
 
   onEvent(cb: (e: EngineEvent) => void): void { this.listeners.push(cb); }
   offEvent(cb: (e: EngineEvent) => void): void { this.listeners = this.listeners.filter((l) => l !== cb); }
   private emit(e: EngineEvent): void { for (const cb of this.listeners) cb(e); }
 
   enqueue(jobId: string): void {
-    void this.processNext();
+    this.schedule();
   }
 
   rerunFrom(jobId: string, step: StepId): void {
     this.opts.store.rerunFrom(jobId, step);
-    this.enqueue(jobId);
+    this.schedule();
   }
 
+  /** 补位调度：有 queued 任务且有空闲槽位 → 按 FIFO 取出执行（幂等，可被入队/rerun/任务结束反复触发） */
+  private schedule(): void {
+    while (this.active.size < this.maxConcurrency) {
+      // 跳过已在 active 中的任务：runJob 的 initProject 在 beginStep 之前 await，
+      // DB 状态尚未从 queued 转 running，直接取 [0] 会无限重跑同一任务（死循环）
+      const next = this.opts.store.listQueued().find((j) => !this.active.has(j.id));
+      if (!next) break;
+      const jobId = next.id;
+      const p = this.runJob(jobId).finally(() => {
+        this.active.delete(jobId);
+        this.schedule(); // 任务结束补位
+      });
+      this.active.set(jobId, p);
+    }
+  }
+
+  /** 等待所有在途任务执行完毕（幂等）。schedule 同步启动任务，join 当前快照后循环重扫，
+   *  兜住任务结束时 finally 里新调度起的任务，直到无 queued 且无 active。 */
   async processNext(): Promise<void> {
-    if (this.running) return this.running;
-    this.running = this.drain().finally(() => { this.running = null; });
-    return this.running;
-  }
-
-  private async drain(): Promise<void> {
-    // 每轮快照跑完后重扫：drain 进行期间新入队的任务（并发 POST、运行中的 rerunFrom）
-    // 不能被漏掉，否则会一直卡在 queued 直到下一次 enqueue。单飞语义不变——
-    // busy 期间的 enqueue/rerunFrom 仍 join 在途 drain，由本循环兜底拾取。
-    // 终止性：runJob 结束时任务必为 completed/failed/needs_review（不再 queued），
-    // queued 只能由 createJob/rerunFrom 重新产生（调用方行为），不会自转死循环。
     for (;;) {
-      const jobs = this.opts.store.listJobs(100).filter((j) => j.status === "queued");
-      if (jobs.length === 0) return;
-      for (const job of jobs) {
-        await this.runJob(job.id);
-      }
+      this.schedule();
+      const current = [...this.active.values()];
+      if (current.length === 0) break;
+      await Promise.allSettled(current);
     }
   }
 
@@ -82,22 +95,15 @@ export class PipelineEngine {
     if (!job) return;
     const projectDir = join(this.opts.projectRoot, jobId);
     mkdirSync(projectDir, { recursive: true });
-    // 生产链路在 step0 之前初始化项目脚手架（meta.json/hyperframes.json/package.json，
-    // 及全新目录下的空白 index.html）。initProject 对 index.html 采用"存在则跳过"，
-    // rerunFrom 恢复时不会覆盖 step4 生成的真实 index.html；step5 的脚手架兜底守卫
-    // 因 meta.json 已存在而保持惰性。测试桩 render 无 initProject 方法时跳过。
     const render = this.opts.services.render(projectDir);
     if ("initProject" in render) {
       await render.initProject(jobId, job.config.format);
     }
     this.emit({ type: "job_status", jobId, status: "running", currentStep: job.currentStep, message: "started" });
 
-    // 按任务组装渠道：自定义渠道（前端 BYOK）优先于内置渠道
     const providers = mergeProviders(this.opts.services.baseProviders ?? [], job.config.providers);
     const hasCustom = (job.config.providers?.length ?? 0) > 0;
     const llm = hasCustom ? new LlmGateway(providers) : this.opts.services.llm;
-    // 评审模型：配置了 judgeModel 用共享 Judge；否则按任务默认模型动态构建
-    // （config 只提供预设渠道时 judgeModel 为空——E2E 实测空模型报 unknown provider）
     const judge = hasCustom || !this.opts.services.judgeModel
       ? new Judge(llm, job.config.models.default, this.opts.services.judge?.threshold ?? 7)
       : this.opts.services.judge;
@@ -145,9 +151,7 @@ export class PipelineEngine {
         store, render: this.opts.services.render(projectDir), tts: this.opts.services.tts,
         feedback, log: () => {},
       };
-      // 注入模型：步骤内通过 ctx.llm.chat({ model, ... }) 使用
       (ctx as StepContext & { _model: string })._model = model;
-      // 注入渲染清晰度档位：step6 用它透传 --quality（无配置时默认 standard）
       (ctx as StepContext & { _renderQuality: string })._renderQuality = store.getJob(jobId)!.config.renderQuality ?? "standard";
       try {
         const r: StepResult = await stepFn(ctx, prev);
@@ -184,5 +188,5 @@ export class PipelineEngine {
     }
   }
 
-  shutdown(): void { /* no-op: 队列为惰性单飞 */ }
+  shutdown(): void { /* no-op: 队列为惰性 worker 池 */ }
 }
