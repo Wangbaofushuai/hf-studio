@@ -6,6 +6,7 @@ import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
   checkDeps, which, resolveProjectRoot, isPrivateIp, installCheck,
+  findGitRoot,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -31,6 +32,17 @@ describe("vd core", () => {
   test("isPidAlive detects real and dead pids", () => {
     expect(isPidAlive(process.pid)).toBe(true);
     expect(isPidAlive(99999999)).toBe(false);
+  });
+
+  test("findGitRoot climbs to the nearest .git directory", () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "repo", "sub", "deep"), { recursive: true });
+    mkdirSync(join(root, "repo", ".git"));
+    expect(findGitRoot(join(root, "repo", "sub", "deep"))).toBe(join(root, "repo"));
+    expect(findGitRoot(join(root, "repo", "sub"))).toBe(join(root, "repo"));
+    expect(findGitRoot(join(root, "repo"))).toBe(join(root, "repo"));
+    expect(findGitRoot(join(root, "elsewhere"))).toBeNull();
+    rmSync(root, { recursive: true, force: true });
   });
 
   test("checkHealth succeeds against a live port and fails against a dead one", async () => {

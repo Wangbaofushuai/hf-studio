@@ -326,6 +326,7 @@ export function renderMenu(running: boolean, state: VdState | null): void {
   }
   console.log(`${BOLD}│${RESET}  1. 启动项目`);
   console.log(`${BOLD}│${RESET}  2. 停止项目`);
+  console.log(`${BOLD}│${RESET}  3. 更新项目（git pull + 重装依赖）`);
   console.log(`${BOLD}│${RESET}  0. 退出`);
   console.log(`${BOLD}╰─────────────────────────────────────────╯${RESET}`);
 }
@@ -422,6 +423,42 @@ export async function stopFlow(root: string): Promise<void> {
   console.log("✓ 已停止项目。");
 }
 
+// ─────────────────────────── 更新流程 ───────────────────────────
+
+/** 从目录向上找最近的 git 仓库根（含 .git 的目录）；找不到返回 null */
+export function findGitRoot(dir: string): string | null {
+  let d = dir;
+  while (d !== "/" && d.length > 1) {
+    if (existsSync(join(d, ".git"))) return d;
+    d = dirname(d);
+  }
+  return null;
+}
+
+/** 更新：git pull + 重装 server/web 依赖。安装场景 projectRoot 是仓库内的 hf-studio 子目录，
+ *  git 仓库根在其上级（~/hf-studio）；开发场景 git 根就是仓库根。 */
+export async function updateFlow(root: string): Promise<void> {
+  const gitRoot = findGitRoot(root);
+  if (!gitRoot) {
+    console.log("未找到 git 仓库（非 git 安装），无法自更新。可重新执行安装脚本。");
+    return;
+  }
+  const run = defaultRunner;
+  console.log(`仓库根: ${gitRoot}`);
+  const pull = await run("git", ["-C", gitRoot, "pull", "--ff-only"]);
+  console.log((pull.stdout || "git pull 完成").trim());
+  if (pull.code !== 0) {
+    console.log(`${DIM}git pull 失败（本地可能有未提交改动，或网络问题；stderr 见下）${RESET}`);
+    console.log(pull.stderr?.slice(0, 500));
+    return;
+  }
+  for (const sub of ["server", "web"] as const) {
+    const r = await run("bun", ["install"], { cwd: join(root, sub) });
+    console.log(`${r.code === 0 ? "✓" : "✗"} ${sub} 依赖${r.code === 0 ? " 就绪" : " 安装失败"}`);
+  }
+  console.log("✓ 更新完成。若项目正在运行，请选 2 停止后重新 1 启动。");
+}
+
 // ─────────────────────────── 主循环 ───────────────────────────
 
 async function main(): Promise<void> {
@@ -436,8 +473,9 @@ async function main(): Promise<void> {
     const answer = (await ask(rl, "请选择: "))?.trim() ?? "";
     if (answer === "1") await startFlow(root, rl);
     else if (answer === "2") await stopFlow(root);
+    else if (answer === "3") await updateFlow(root);
     else if (answer === "0" || answer === "") break; // EOF/空输入 → 退出
-    else console.log("无效输入，请输入 1 / 2 / 0。");
+    else console.log("无效输入，请输入 1 / 2 / 3 / 0。");
   }
   rl.close();
   console.log("再见。");
