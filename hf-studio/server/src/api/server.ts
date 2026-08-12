@@ -74,6 +74,8 @@ export function createServer(opts: {
     const renderQuality = String(form.get("renderQuality") ?? "standard");
     const quality = String(form.get("quality") ?? "fast") as JobConfig["quality"];
     if (renderQuality !== "standard" && renderQuality !== "high") return c.json({ error: "renderQuality 不合法" }, 400);
+    // 字幕烧录：默认开启；显式 "false" 关闭
+    const subtitles = String(form.get("subtitles") ?? "true") !== "false";
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
     if (!model) return c.json({ error: "请选择模型渠道（模型未配置）" }, 400);
@@ -90,6 +92,7 @@ export function createServer(opts: {
       models: { default: model },
       materials: { images, audio },
       renderQuality,
+      subtitles,
       ...(providers.length > 0 ? { providers } : {}),
       ...(theme ? { theme } : {}),
     });
@@ -108,7 +111,7 @@ export function createServer(opts: {
       if (isImg) images.push(safe);
       else audio = safe;
     }
-    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, quality, renderQuality, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
+    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, quality, renderQuality, subtitles, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
     opts.engine.enqueue(jobId);
     return c.json({ id: jobId }, 201);
   });

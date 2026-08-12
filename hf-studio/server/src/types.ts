@@ -33,6 +33,7 @@ export interface JobConfig {
   };
   renderQuality?: "standard" | "high";           // 渲染清晰度档位（hyperframes render --quality）；默认 standard
   quality?: "fast" | "balanced" | "high";        // 生成快慢档：step4/5 思考强度 low/medium/high；默认 fast
+  subtitles?: boolean;                             // 旁白字幕烧录（默认开启；voiceover=false 时跳过）
 }
 
 export interface Brief {
