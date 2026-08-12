@@ -169,6 +169,7 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
 ### 服务、配置与数据
 
 - **端口**：后端 8787、前端 5173，均绑 `0.0.0.0`（公网可访问 `http://<公网IP>:5173`，需云安全组放行）；新起服务默认按公网可访问配置
+- **并发**：engine 固定并发 worker 池，默认 2（`HF_STUDIO_CONCURRENCY` 环境变量可调，钳制 ≥1）；FIFO 出队
 - **配置**：`server/config.json`（预设渠道，无 key，gitignored）+ `data/channels.json`（用户 key）→ 引擎合并；改配置以 `config.example.json` 为模板；旧版 `providers` 结构启动时自动迁移
 - **密钥**：API key 明文存 SQLite / channels.json，学习测试环境可接受，交付时提示用户
 - **数据**：`data/projects/<jobId>/` 是真实产物，**非确认不删**；`data/`、`.tmp/`、`node_modules/` 均 gitignored
