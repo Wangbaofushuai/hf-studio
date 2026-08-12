@@ -29,7 +29,7 @@
 - Produces:
   - `interface SubtitleLine { startSec: number; endSec: number; text: string }`
   - `interface SubtitleStyle { primaryColor: string; fontName: string; fontSizePx: number; marginVPx: number; width: number; height: number }`
-  - `formatAssTime(sec: number): string` — ASS 时间格式 `H:MM:SS.cc`（四舍五入到厘秒，负数钳 0）
+  - `formatAssTime(sec: number): string` — ASS 时间格式 `H:MM:SS.cc`（截断到厘秒，保证相邻字幕单调不重叠，负数钳 0）
   - `assColor(hex: string): string` — `#RRGGBB` → `&H00BBGGRR`（非法输入返回 `&H00FFFFFF`）
   - `buildAss(lines: SubtitleLine[], style: SubtitleStyle): string`
   - `extractPrimaryColor(designMd: string): string | null` — DESIGN.md 中首个 `#rrggbb`
@@ -47,7 +47,7 @@ describe("ass subtitle builder", () => {
   test("formatAssTime formats H:MM:SS.cc", () => {
     expect(formatAssTime(0)).toBe("0:00:00.00");
     expect(formatAssTime(61.527)).toBe("0:01:01.52");
-    expect(formatAssTime(600)).toBe("10:00:00.00");
+    expect(formatAssTime(600)).toBe("0:10:00.00"); // 600 秒 = 10 分钟
     expect(formatAssTime(-1)).toBe("0:00:00.00");
   });
 
