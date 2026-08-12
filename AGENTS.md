@@ -1,11 +1,11 @@
 # AGENTS.md — 项目规则
 
-> 本文件是 Grok 在本工作区（`/root/KaiFa/Vide/AG`）工作时的强制行为规则，每次会话自动加载，任务过程中始终生效。
+> 本文件是 AI 助手在本工作区（`/root/hf-studio`）工作时的强制行为规则，每次会话自动加载，任务过程中始终生效。
 
 ## 1. 运行环境
 
 - **操作系统**：Linux 服务器
-- **部署方式**：通过 Codeg 部署，通过公网 IP 的 Web 界面与用户对话
+- **部署方式**：部署于本 Linux 服务器，通过公网 IP 的 Web 界面与用户对话
 - **GitHub 分发**：仓库 `https://github.com/Wangbaofushuai/hf-studio`（公开，SSH: `git@github.com:Wangbaofushuai/hf-studio.git`）
   - **一键安装到新主机**：`curl -fsSL https://raw.githubusercontent.com/Wangbaofushuai/hf-studio/master/install.sh | bash`
     （克隆到 `~/hf-studio`，创建 `/usr/local/bin/vd` 软链接；幂等，重复执行即更新）
@@ -17,7 +17,7 @@
   - 新起 Web 服务时默认按公网可访问配置，并在交付时给出公网访问地址
   - 注意：无鉴权的 API 公网可达 = 持有 IP 者可调用（如消耗 LLM key），学习测试环境可接受，交付时提示用户
 - **用途**：学习与测试环境，可以放心实验
-- **工作区**：`/root/KaiFa/Vide/AG`，已初始化 git 仓库（分支 `master`，用 git 管理所有变更）
+- **工作区**：`/root/hf-studio`（即 GitHub 仓库 `Wangbaofushuai/hf-studio` 的克隆根），已初始化 git 仓库（分支 `master`，用 git 管理所有变更）；应用本体在子目录 `hf-studio/`
 - **说明**：安全不是关注点（学习测试环境），但"不污染宿主机"与"目录整洁"两条规则仍然必须遵守
 
 ## 2. 宿主机保护（除非必要，不得污染宿主机）
@@ -28,7 +28,7 @@
 - 不修改宿主机系统配置：`/etc/`、`/usr/`、systemd 服务、crontab、全局 shell 配置（如 `~/.bashrc`）、全局环境变量
 - 不全局安装软件：不使用 `pip install`（无 venv）、`npm install -g`、`apt-get install` 等；Python 项目用项目内 `.venv`，Node 依赖装在项目内 `node_modules`
 - 使用 Docker 等容器时用 `--rm` 等一次性策略，不遗留容器、镜像、卷
-- 任务结束清理自己产生的临时文件、日志、下载物；不在 `~` 下创建散乱文件（`~/.grok` 是工具配置目录，除外）
+- 任务结束清理自己产生的临时文件、日志、下载物；不在 `~` 下创建散乱文件（`~/.cache/opencode` 等工具配置目录，除外）
 - 确有必要进行系统级操作（装全局软件、改系统配置等）时，先向用户说明原因和影响再执行
 
 ## 3. 项目目录整洁（git 仓库规则）
@@ -44,9 +44,9 @@
 
 **每次任务开始前，先盘点可用外部资源，再动手，并在合适的时机调用、互相配合。**
 
-1. **查看 Skills**：检查 `~/.grok/skills/` 目录和系统提示中的技能列表，确认与本任务相关的技能
-2. **查看 MCP 工具**：用 `search_tool` 检索当前可用的 MCP 服务与工具（如 codeg-mcp）；调用前必须先获取工具 schema，绝不猜测参数
-3. **查阅文档**：需要时阅读 `~/.grok/docs/user-guide/` 下的官方文档（配置、技能、沙箱等）
+1. **查看 Skills**：检查系统提示中的可用技能列表（superpowers 系列，用 `skill` 工具加载），确认与本任务相关的技能
+2. **查看 MCP 工具**：检索当前可用的 MCP 服务与工具；调用前必须先获取工具 schema，绝不猜测参数
+3. **查阅文档**：需要时阅读 `hf-studio/docs/environment.md` 与 `docs/superpowers/` 下的项目设计/计划文档
 
 **技能在合适时机调用，可串联配合：**
 
@@ -59,7 +59,7 @@
 | 声称完成之前 | `verification-before-completion` |
 | 代码审查 | `requesting-code-review` / `receiving-code-review` |
 | 多个独立任务并行 | `dispatching-parallel-agents` |
-| 涉及 docx / xlsx / pptx | `officecli` 系列 |
+| 使用 git worktree 隔离开发 | `using-git-worktrees` |
 
 ## 5. 工作习惯
 
@@ -74,7 +74,7 @@
 
 - **技术栈**：后端 bun + TypeScript + Hono（端口 8787，绑 `0.0.0.0`）；前端 React 19 + Vite + Tailwind（端口 5173，绑 `0.0.0.0`）；存储 SQLite + 磁盘产物
 - **外部依赖**：Edge-TTS（配音）、hyperframes CLI（渲染，底层 FFmpeg + headless Chrome）、OpenAI 兼容 LLM API（DeepSeek / GLM / Qwen / OpenAI / Kimi 预设 + 前端 BYOK 自定义渠道）
-- **完整设计文档**：`docs/superpowers/specs/2026-08-04-hf-studio-design.md`；管理工具 vd 的设计见 `docs/superpowers/specs/2026-08-05-vd-manager-design.md`
+- **完整设计文档**：`docs/superpowers/specs/` 下共 5 份已确认 spec —— `2026-08-04-hf-studio-design.md`（主设计）、`2026-08-05-channels-ui-design.md`（模型渠道页）、`2026-08-05-newjob-wizard-cjk-font-design.md`（新建任务向导 + CJK 字体）、`2026-08-05-timing-themes-quality-design.md`（节奏/主题/质量）、`2026-08-05-vd-manager-design.md`（vd 管理工具）；实施计划见 `docs/superpowers/plans/`
 
 ### 7 步流水线（`server/src/pipeline/steps/`）
 
@@ -95,14 +95,22 @@
 ## 7. 项目目录结构
 
 ```
-AG/                                  # git 仓库根（分支 master，GitHub: Wangbaofushuai/hf-studio）
+hf-studio/                            # git 仓库根（分支 master，GitHub: Wangbaofushuai/hf-studio）
 ├── AGENTS.md
 ├── install.sh                       # 一键安装脚本（curl|bash → ~/hf-studio + vd 软链接）
 ├── .gitignore                       # 根级：临时/依赖/构建产物
 ├── docs/superpowers/                # 设计与实施文档（日期前缀 YYYY-MM-DD-主题）
 │   ├── specs/                       #   设计文档（已确认）
+│   │   ├── 2026-08-04-hf-studio-design.md
+│   │   ├── 2026-08-05-channels-ui-design.md
+│   │   ├── 2026-08-05-newjob-wizard-cjk-font-design.md
+│   │   ├── 2026-08-05-timing-themes-quality-design.md
+│   │   └── 2026-08-05-vd-manager-design.md
 │   └── plans/                       #   实施计划（子代理执行用）
-└── hf-studio/                       # 子项目根
+│       ├── 2026-08-04-hf-studio.md
+│       ├── 2026-08-05-newjob-wizard-cjk-font.md
+│       └── 2026-08-05-timing-themes-quality.md
+└── hf-studio/                       # 子项目根（HF-Studio 应用）
     ├── vd.ts                        # 管理工具（vd：一条龙启动/停止/依赖检测，可 ln -s 到 /usr/local/bin/vd）
     ├── README.md                    # 完整架构说明 + 快速开始
     ├── bunfig.toml                  # bun 用官方 registry（绕过腾讯镜像 404）
@@ -111,21 +119,22 @@ AG/                                  # git 仓库根（分支 master，GitHub: W
     ├── server/                      # 后端（Hono + bun）
     │   ├── config.json              # 预设渠道配置（gitignored，无 key）
     │   ├── config.example.json      # 配置模板（入库，改名即用）
+    │   ├── package.json / tsconfig.json / bun.lock
     │   ├── src/
     │   │   ├── index.ts             # 入口：绑 0.0.0.0:8787
-    │   │   ├── api/server.ts        # REST + SSE 路由（/api/jobs、/api/channels、/api/voices…）
-    │   │   ├── api/job-dto.ts
+    │   │   ├── types.ts             # 共享类型
+    │   │   ├── api/                 # server.ts（REST + SSE）/ job-dto.ts
     │   │   ├── channels.ts          # 渠道管理（预设 + 自定义 BYOK，同名自定义优先）
     │   │   ├── config.ts
     │   │   ├── db/store.ts          # SQLite JobStore（jobs / step_runs）
-    │   │   ├── llm/                 # LlmGateway（OpenAI 兼容，多 provider + 重试退避）
+    │   │   ├── llm/                 # gateway.ts（LlmGateway，多 provider + 重试退避）/ errors.ts
     │   │   ├── judge/               # LLM-as-Judge 评分器
     │   │   ├── pipeline/            # engine.ts 状态机 + steps/step0-6 + beat-timing + root-html
     │   │   ├── prompts/             # 提示词模板（parse/design/storyboard/build-beat/fix-beat/judge-rubric）
     │   │   ├── render/              # hyperframes CLI 封装（lint/check/snapshot/render）+ resolutions
     │   │   ├── tts/                 # Edge-TTS 服务
     │   │   └── util/                # ffprobe / clean-output
-    │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway 等）
+    │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway/store/tts 等 + fixtures/mock-transport.ts）
     │   ├── scripts/e2e-smoke.ts     # 真实 E2E 冒烟
     │   └── bun.lock
     ├── web/                         # React 前端（中文界面）
@@ -134,6 +143,7 @@ AG/                                  # git 仓库根（分支 master，GitHub: W
     │   │   ├── components/          # WizardSteps / ModelSelect / VoiceSelect / ArtifactPanel / ProgressSteps
     │   │   └── api.ts / types.ts / App.tsx / main.tsx / index.css
     │   ├── vite.config.ts           # 绑 0.0.0.0，/api 代理到 8787
+    │   ├── index.html / package.json / tsconfig.json / bun.lock / .npmrc
     │   └── dist/                    # 构建产物（gitignored）
     ├── data/                        # 运行时数据（gitignored，新环境自动重建）
     │   ├── jobs.db                  # SQLite
