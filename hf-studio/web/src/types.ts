@@ -8,6 +8,7 @@ export interface JobConfigDto {
   materials: { images: string[]; audio: string | null };
   theme?: JobThemeDto | null;
   renderQuality?: JobRenderQuality;
+  subtitles?: boolean;
 }
 export interface JobDto { id: string; status: JobStatus; currentStep: number | null; error: string | null; config: JobConfigDto; createdAt: string; updatedAt: string }
 export interface StepOutputDto { step: number; status: string; artifacts: string[]; data: Record<string, unknown>; log: string; error?: string; attempts: number; judge?: { score: number; rubric: Record<string, number>; feedback: string } }

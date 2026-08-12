@@ -35,6 +35,7 @@ export default function NewJob() {
   const [quality, setQuality] = useState<"standard" | "hd">("standard");
   const [buildQuality, setBuildQuality] = useState<"fast" | "balanced" | "high">("fast");
   const [voiceover, setVoiceover] = useState(true);
+  const [subtitles, setSubtitles] = useState(true);
   const [voice, setVoice] = useState("zh-CN-XiaoxiaoNeural");
   const [language, setLanguage] = useState("zh-CN");
   const [channelId, setChannelId] = useState("");
@@ -117,6 +118,7 @@ export default function NewJob() {
     form.set("language", language);
     form.set("model", finalModel);
     form.set("renderQuality", quality);
+    form.set("subtitles", String(subtitles && voiceover));
     form.set("quality", buildQuality);
     if (themeId) {
       form.set("theme", JSON.stringify({
@@ -178,6 +180,14 @@ export default function NewJob() {
                 <button type="button" data-active={voiceover} onClick={() => setVoiceover(true)}>开启</button>
                 <button type="button" data-active={!voiceover} onClick={() => setVoiceover(false)}>关闭</button>
               </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">字幕</label>
+              <div className="segmented">
+                <button type="button" disabled={!voiceover} data-active={subtitles && voiceover} onClick={() => setSubtitles(true)}>开启</button>
+                <button type="button" disabled={!voiceover} data-active={!subtitles || !voiceover} onClick={() => setSubtitles(false)}>关闭</button>
+              </div>
+              {!voiceover && <p className="mt-1 text-[11px] text-neutral-400">配音关闭时无字幕</p>}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">旁白语言</label>
@@ -317,6 +327,10 @@ export default function NewJob() {
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">配音</dt>
                 <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{voiceover ? `开启 · ${language} · ${voice}` : "关闭"}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">字幕</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{voiceover && subtitles ? "开启" : "关闭"}</dd>
               </div>
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">主题</dt>
