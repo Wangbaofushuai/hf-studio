@@ -64,6 +64,12 @@ export class JobStore {
     return rows.map((r) => this.mapJob(r));
   }
 
+  /** FIFO 队列快照：queued 任务按插入顺序（rowid ASC = 最早入队在前） */
+  listQueued(): JobRow[] {
+    const rows = this.db.query("SELECT * FROM jobs WHERE status = 'queued' ORDER BY rowid ASC").all() as Record<string, unknown>[];
+    return rows.map((r) => this.mapJob(r));
+  }
+
   private mapJob(row: Record<string, unknown>): JobRow {
     return {
       id: String(row.id),

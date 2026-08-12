@@ -83,3 +83,22 @@ describe("JobStore", () => {
     expect(jobs[1].id).toBe(a);
   });
 });
+
+describe("JobStore.listQueued", () => {
+  let dir: string; let store: JobStore;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "hf-store-q-"));
+    store = new JobStore(join(dir, "jobs.db"));
+    store.init();
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  test("returns queued jobs in insertion order (FIFO)", () => {
+    const id1 = store.createJob(cfg);
+    const id2 = store.createJob(cfg);
+    const id3 = store.createJob(cfg);
+    store.updateJob(id2, { status: "running" }); // 排除非 queued
+    const q = store.listQueued();
+    expect(q.map((j) => j.id)).toEqual([id1, id3]);
+  });
+});
