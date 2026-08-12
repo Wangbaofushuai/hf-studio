@@ -133,6 +133,7 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
     │   │   ├── prompts/             # 提示词模板（parse/design/storyboard/build-beat/fix-beat/judge-rubric）
     │   │   ├── render/              # hyperframes CLI 封装（lint/check/snapshot/render）+ resolutions
     │   │   ├── tts/                 # Edge-TTS 服务
+    │   │   ├── subtitle/            # ASS 字幕生成 + ffmpeg 烧录
     │   │   └── util/                # ffprobe / clean-output
     │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway/store/tts 等 + fixtures/mock-transport.ts）
     │   ├── scripts/e2e-smoke.ts     # 真实 E2E 冒烟
