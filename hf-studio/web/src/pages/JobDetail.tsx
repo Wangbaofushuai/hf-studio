@@ -97,7 +97,7 @@ export default function JobDetail() {
           </div>
           <div className="flex gap-2">
             <dt className="shrink-0 text-neutral-500">字幕</dt>
-            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{job.config.subtitles === false ? "关闭" : "开启"}</dd>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{!job.config.voiceover || job.config.subtitles === false ? "关闭" : "开启"}</dd>
           </div>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
             <dt className="shrink-0 text-neutral-500">主题</dt>

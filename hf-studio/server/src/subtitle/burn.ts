@@ -11,7 +11,7 @@ export async function burnSubtitles(input: string, assPath: string, output: stri
   try {
     await execFileP(
       "ffmpeg",
-      ["-y", "-i", input, "-vf", `ass=${assPath}`, "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-c:a", "copy", tmp],
+      ["-y", "-i", input, "-vf", `ass=filename='${assPath}'`, "-c:v", "libx264", "-crf", "18", "-preset", "fast", "-c:a", "copy", tmp],
       { timeout: 30 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 },
     );
     renameSync(tmp, output);

@@ -80,4 +80,62 @@ describe("PipelineEngine concurrency", () => {
     expect(store.getJob(rerunId)?.status).toBe("completed");
     expect(order).toEqual(["s0:" + rerunId, "s1:" + rerunId, "s0:" + slowId, "s1:" + slowId, "s1:" + rerunId]);
   });
+
+  test("job stuck in gated initProject is not respawned when a slot frees (find-guard)", async () => {
+    const { dir, store } = newStore(); dirs.push(dir);
+    const inits: string[] = [];
+    const order: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let slowId = "";
+    const steps: StepFn[] = [async (ctx) => {
+      order.push(`s0:${ctx.jobId}`);
+      return { status: "passed", artifacts: [], data: {}, log: "ok" };
+    }];
+    const engine = new PipelineEngine({
+      store, steps,
+      services: { render: (projectDir: string) => ({
+        initProject: async (jobId: string) => {
+          inits.push(jobId);
+          if (jobId === slowId) await gate; // 卡在 initProject：DB 仍是 queued，但已在 active
+        },
+      }) } as unknown as Services,
+      projectRoot: dir, maxConcurrency: 2,
+    });
+    const a = store.createJob(cfg);
+    const b = store.createJob(cfg);
+    slowId = b;
+    const c = store.createJob(cfg);
+    const drain = engine.processNext();
+    // a 跑完释放一个槽位，b 仍卡在 initProject（queued-while-active 窗口）：
+    // 无 find-guard 时 schedule() 会重复 pick b；有 guard 时应补位给 c
+    await sleep(50);
+    release();
+    await drain;
+    expect(inits.filter((id) => id === b)).toHaveLength(1);
+    expect(order).toEqual(["s0:" + a, "s0:" + c, "s0:" + b]);
+    for (const id of [a, b, c]) expect(store.getJob(id)?.status).toBe("completed");
+  });
+
+  test("throwing initProject fails the job in DB and schedule does not respawn it", async () => {
+    const { dir, store } = newStore(); dirs.push(dir);
+    const order: string[] = [];
+    const steps: StepFn[] = [async (ctx) => {
+      order.push(`s0:${ctx.jobId}`);
+      return { status: "passed", artifacts: [], data: {}, log: "ok" };
+    }];
+    const engine = new PipelineEngine({
+      store, steps,
+      services: { render: (projectDir: string) => ({ initProject: async () => { throw new Error("boom"); } }) } as unknown as Services,
+      projectRoot: dir, maxConcurrency: 2,
+    });
+    const a = store.createJob(cfg);
+    const b = store.createJob(cfg);
+    await engine.processNext();
+    expect(store.getJob(a)?.status).toBe("failed");
+    expect(store.getJob(b)?.status).toBe("failed");
+    expect(store.getJob(a)?.error).toBe("boom");
+    expect(store.getJob(b)?.error).toBe("boom");
+    expect(order).toEqual([]); // 全部在 initProject 失败，无步骤执行
+  });
 });
