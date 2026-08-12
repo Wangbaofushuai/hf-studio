@@ -6,6 +6,11 @@
 
 - **操作系统**：Linux 服务器
 - **部署方式**：通过 Codeg 部署，通过公网 IP 的 Web 界面与用户对话
+- **GitHub 分发**：仓库 `https://github.com/Wangbaofushuai/hf-studio`（公开，SSH: `git@github.com:Wangbaofushuai/hf-studio.git`）
+  - **一键安装到新主机**：`curl -fsSL https://raw.githubusercontent.com/Wangbaofushuai/hf-studio/master/install.sh | bash`
+    （克隆到 `~/hf-studio`，创建 `/usr/local/bin/vd` 软链接；幂等，重复执行即更新）
+  - vd 菜单含「3. 更新项目」（git pull + 重装依赖）；安装脚本支持 `HF_STUDIO_DIR`/`HF_STUDIO_REPO` 覆盖
+  - push 用 SSH（本机 `~/.ssh/id_ed25519` 已授权）；**推送前确认无真实 key 混入**（config/channels/data 均 gitignored）
 - **公网访问（重要）**：服务器有公网 IP（当前 `43.133.250.224`，可能变化，用 `hostname -I` 确认）。**用户通过公网 IP 访问部署的 Web 服务**，因此：
   - Web/API 服务必须监听 `0.0.0.0`（Vite `server.host`、`Bun.serve` 的 `hostname`），默认只绑 localhost 会导致公网打不开
   - 云安全组/防火墙需放行对外端口（HF-Studio 当前为 5173 前端、8787 API）
@@ -90,8 +95,9 @@
 ## 7. 项目目录结构
 
 ```
-AG/                                  # git 仓库根（分支 master）
+AG/                                  # git 仓库根（分支 master，GitHub: Wangbaofushuai/hf-studio）
 ├── AGENTS.md
+├── install.sh                       # 一键安装脚本（curl|bash → ~/hf-studio + vd 软链接）
 ├── .gitignore                       # 根级：临时/依赖/构建产物
 ├── docs/superpowers/                # 设计与实施文档（日期前缀 YYYY-MM-DD-主题）
 │   ├── specs/                       #   设计文档（已确认）
