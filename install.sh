@@ -41,10 +41,20 @@ fi
 # vd.ts 定位：仓库根即 hf-studio（本仓库结构 = 根下含 hf-studio/ 子目录）
 if [ -f "$INSTALL_DIR/hf-studio/vd.ts" ]; then
   VD_FILE="$INSTALL_DIR/hf-studio/vd.ts"
+  APP_DIR="$INSTALL_DIR/hf-studio"
 elif [ -f "$INSTALL_DIR/vd.ts" ]; then
   VD_FILE="$INSTALL_DIR/vd.ts"
+  APP_DIR="$INSTALL_DIR"
 else
   err "未找到 vd.ts（仓库结构异常）"
+fi
+
+# 5) 确保本地配置存在（gitignored，新克隆无此文件 → 从模板重建，否则预设渠道列表为空）
+CONFIG_JSON="$APP_DIR/server/config.json"
+CONFIG_EXAMPLE="$APP_DIR/server/config.example.json"
+if [ ! -f "$CONFIG_JSON" ] && [ -f "$CONFIG_EXAMPLE" ]; then
+  cp "$CONFIG_EXAMPLE" "$CONFIG_JSON"
+  ok "已从 config.example.json 创建 server/config.json（预设渠道）"
 fi
 
 # 3) 创建 vd 快捷命令

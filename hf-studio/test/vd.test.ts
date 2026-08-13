@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -195,6 +195,27 @@ describe("vd core", () => {
     expect(called).toContain("apt-get install -y");
     expect(called).toContain("libnss3");
     expect(called).toContain("libxkbcommon-x11-0");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("checkDeps flags missing server/config.json (preset channels)", async () => {
+    const root = tmpRoot();
+    const run = async () => ({ code: 1, stdout: "" });
+    const deps = await checkDeps(root, run as never);
+    const cfg = deps.find((d) => d.name === "渠道配置");
+    expect(cfg?.ok).toBe(false);
+    expect(cfg?.hostAffects).toBe(false); // 项目内自动修复，不询问
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("installCheck creates config.json from config.example.json when missing", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server"), { recursive: true });
+    writeFileSync(join(root, "server", "config.example.json"), JSON.stringify({ presetChannels: [{ id: "deepseek" }] }));
+    const dep = { name: "渠道配置", ok: false, hostAffects: false, action: "重建" };
+    const ok = await installCheck(root, dep);
+    expect(ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(root, "server", "config.json"), "utf8")).presetChannels[0].id).toBe("deepseek");
     rmSync(root, { recursive: true, force: true });
   });
 });

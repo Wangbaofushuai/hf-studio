@@ -9,7 +9,7 @@
  * 零硬编码绝对路径——新服务器复制项目后 ln -s <项目>/vd.ts /usr/local/bin/vd 即可。
  */
 import { spawn, execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, realpathSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, realpathSync, readFileSync, writeFileSync, rmSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
@@ -269,6 +269,12 @@ export async function checkDeps(root: string, run: CmdRunner = defaultRunner): P
       detail: "缺失时视频中文渲染为方块字，建议安装",
     },
     {
+      // 预设渠道配置 gitignored，新环境克隆后不存在 → 从 config.example.json 自动重建
+      name: "渠道配置", ok: existsSync(join(root, "server", "config.json")), hostAffects: false,
+      action: "从 config.example.json 重建（项目内，自动）",
+      detail: existsSync(join(root, "server", "config.json")) ? undefined : "预设渠道配置缺失，将自动从模板重建",
+    },
+    {
       name: "LLM key",
       ok: checkKey(root), hostAffects: false,
       action: "编辑 server/config.json 填入真实 apiKey，或在前端「自定义模型渠道」填写",
@@ -295,6 +301,14 @@ export async function installCheck(root: string, check: DepCheck, run: CmdRunner
       return (await run("apt-get", ["install", "-y", ...CHROME_RUNTIME_PKGS])).code === 0;
     case "中文字体（CJK）":
       return (await run("apt-get", ["install", "-y", "fonts-noto-cjk"])).code === 0;
+    case "渠道配置": {
+      const example = join(root, "server", "config.example.json");
+      const target = join(root, "server", "config.json");
+      if (existsSync(target)) return true;
+      if (!existsSync(example)) return false;
+      copyFileSync(example, target);
+      return existsSync(target);
+    }
     case "bun":
       return (await run("bash", ["-c", "curl -fsSL https://bun.sh/install | bash"])).code === 0;
     default:
