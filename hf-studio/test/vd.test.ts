@@ -6,7 +6,7 @@ import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
   checkDeps, which, resolveProjectRoot, isPrivateIp, installCheck,
-  findGitRoot, missingChromeRuntimeLibs, nodeOk,
+  findGitRoot, missingChromeRuntimeLibs, nodeOk, libasoundPkg,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -259,6 +259,32 @@ describe("vd core", () => {
     const r = await installCheck(root, dep, run as never);
     expect(r.ok).toBe(false);
     expect(r.error).toContain("dpkg");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("libasoundPkg picks t64 when available else legacy libasound2", async () => {
+    const withT64 = async (cmd: string, args: string[]) =>
+      cmd === "apt-cache" ? { code: 0, stdout: "libasound2t64:\n  Candidate: 1.2.11-1build3", stderr: "" } : { code: 1, stdout: "", stderr: "" };
+    expect(await libasoundPkg(withT64 as never)).toBe("libasound2t64");
+    const noT64 = async (cmd: string, args: string[]) =>
+      cmd === "apt-cache" ? { code: 0, stdout: "libasound2t64:\n  Candidate: (none)", stderr: "" } : { code: 1, stdout: "", stderr: "" };
+    expect(await libasoundPkg(noT64 as never)).toBe("libasound2");
+  });
+
+  test("installCheck Chrome 运行库 adapts libasound2 to libasound2t64", async () => {
+    const root = tmpRoot();
+    const calls: string[] = [];
+    const run = async (cmd: string, args: string[]) => {
+      calls.push(`${cmd} ${args.join(" ")}`);
+      if (cmd === "apt-cache") return { code: 0, stdout: "libasound2t64:\n  Candidate: 1.2.11-1build3", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    const dep = { name: "Chrome 运行库", ok: false, hostAffects: true, action: "apt" };
+    const r = await installCheck(root, dep, run as never);
+    expect(r.ok).toBe(true);
+    const apt = calls.find((c) => c.startsWith("apt-get install"));
+    expect(apt).toContain("libasound2t64");
+    expect(apt).not.toContain("libasound2 ");
     rmSync(root, { recursive: true, force: true });
   });
 

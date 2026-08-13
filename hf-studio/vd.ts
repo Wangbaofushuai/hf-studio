@@ -241,6 +241,16 @@ export async function missingChromeRuntimeLibs(run: CmdRunner = defaultRunner): 
   return CHROME_RUNTIME_LIBS.filter((lib) => !present.has(lib));
 }
 
+/** Ubuntu 24.04+ 的 ALSA 库包名为 libasound2t64（t64 过渡）；22.04 及更早是 libasound2 */
+export async function libasoundPkg(run: CmdRunner = defaultRunner): Promise<string> {
+  const r = await run("apt-cache", ["policy", "libasound2t64"]);
+  if (r.code === 0) {
+    const m = /Candidate:\s*(\S+)/.exec(r.stdout);
+    if (m && m[1] !== "(none)") return "libasound2t64";
+  }
+  return "libasound2";
+}
+
 export async function checkDeps(root: string, run: CmdRunner = defaultRunner): Promise<DepCheck[]> {
   const hasChrome = existsSync(join(process.env.HOME ?? "", ".cache", "hyperframes", "chrome"));
   const missingLibs = await missingChromeRuntimeLibs(run);
@@ -330,7 +340,10 @@ export async function installCheck(root: string, check: DepCheck, run: CmdRunner
       return r.code === 0 ? { ok: true } : fail(r, "hyperframes browser ensure");
     }
     case "Chrome 运行库": {
-      const r = await run("apt-get", ["install", "-y", ...CHROME_RUNTIME_PKGS]);
+      // libasound2 在 Ubuntu 24.04+ 改名 libasound2t64，按可用性自适应包名
+      const asound = await libasoundPkg(run);
+      const pkgs = CHROME_RUNTIME_PKGS.map((p) => (p === "libasound2" ? asound : p));
+      const r = await run("apt-get", ["install", "-y", ...pkgs]);
       return r.code === 0 ? { ok: true } : fail(r, "apt-get install Chrome 运行库");
     }
     case "中文字体（CJK）": {
