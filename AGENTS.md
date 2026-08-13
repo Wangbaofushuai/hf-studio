@@ -1,6 +1,6 @@
 # AGENTS.md — 项目规则
 
-> 本文件是 AI 助手在本工作区（`/root/hf-studio`）工作时的强制行为规则，每次会话自动加载，任务过程中始终生效。
+> 本文件是 AI 助手在本工作区（`/root/KaiFa/Vide/AG`）工作时的强制行为规则，每次会话自动加载，任务过程中始终生效。
 
 ## 1. 运行环境
 
@@ -10,14 +10,15 @@
   - **一键安装到新主机**：`curl -fsSL https://raw.githubusercontent.com/Wangbaofushuai/hf-studio/master/install.sh | bash`
     （克隆到 `~/hf-studio`，创建 `/usr/local/bin/vd` 软链接；幂等，重复执行即更新）
   - vd 菜单含「3. 更新项目」（git pull + 重装依赖）；安装脚本支持 `HF_STUDIO_DIR`/`HF_STUDIO_REPO` 覆盖
+  - vd 依赖检测：要求 node >= 22；检测 Chrome 运行库缺失（Ubuntu 24.04+ 为 `libasound2t64`，装前先询问）；`server/config.json` 缺失时自动从模板创建
   - push 用 SSH（本机 `~/.ssh/id_ed25519` 已授权）；**推送前确认无真实 key 混入**（config/channels/data 均 gitignored）
-- **公网访问（重要）**：服务器有公网 IP（当前 `43.133.250.224`，可能变化，用 `hostname -I` 确认）。**用户通过公网 IP 访问部署的 Web 服务**，因此：
+- **公网访问（重要）**：服务器有公网 IP（当前 `43.133.250.224`，可能变化）。**注意：本机网卡只有私网地址（`hostname -I` 返回 10.x/172.x，NAT 环境），公网 IP 用 vd 内置的 `publicIp()` 查询（curl ifconfig.me，5 分钟缓存）**。**用户通过公网 IP 访问部署的 Web 服务**，因此：
   - Web/API 服务必须监听 `0.0.0.0`（Vite `server.host`、`Bun.serve` 的 `hostname`），默认只绑 localhost 会导致公网打不开
   - 云安全组/防火墙需放行对外端口（HF-Studio 当前为 5173 前端、8787 API）
   - 新起 Web 服务时默认按公网可访问配置，并在交付时给出公网访问地址
   - 注意：无鉴权的 API 公网可达 = 持有 IP 者可调用（如消耗 LLM key），学习测试环境可接受，交付时提示用户
 - **用途**：学习与测试环境，可以放心实验
-- **工作区**：`/root/hf-studio`（即 GitHub 仓库 `Wangbaofushuai/hf-studio` 的克隆根），已初始化 git 仓库（分支 `master`，用 git 管理所有变更）；应用本体在子目录 `hf-studio/`
+- **工作区**：`/root/KaiFa/Vide/AG`（即 GitHub 仓库 `Wangbaofushuai/hf-studio` 的克隆根），已初始化 git 仓库（分支 `master`，用 git 管理所有变更）；应用本体在子目录 `hf-studio/`
 - **说明**：安全不是关注点（学习测试环境），但"不污染宿主机"与"目录整洁"两条规则仍然必须遵守
 
 ## 2. 宿主机保护（除非必要，不得污染宿主机）
@@ -74,7 +75,9 @@
 
 - **技术栈**：后端 bun + TypeScript + Hono（端口 8787，绑 `0.0.0.0`）；前端 React 19 + Vite + Tailwind（端口 5173，绑 `0.0.0.0`）；存储 SQLite + 磁盘产物
 - **外部依赖**：Edge-TTS（配音）、hyperframes CLI（渲染，底层 FFmpeg + headless Chrome）、OpenAI 兼容 LLM API（DeepSeek / GLM / Qwen / OpenAI / Kimi 预设 + 前端 BYOK 自定义渠道）
-- **完整设计文档**：`docs/superpowers/specs/` 下共 5 份已确认 spec —— `2026-08-04-hf-studio-design.md`（主设计）、`2026-08-05-channels-ui-design.md`（模型渠道页）、`2026-08-05-newjob-wizard-cjk-font-design.md`（新建任务向导 + CJK 字体）、`2026-08-05-timing-themes-quality-design.md`（节奏/主题/质量）、`2026-08-05-vd-manager-design.md`（vd 管理工具）；实施计划见 `docs/superpowers/plans/`
+- **稳定性工程化**：固定并发 worker 池（默认 2，`HF_STUDIO_CONCURRENCY` 可调，FIFO 出队）+ 每步校验门 + 自动重试 + LLM-as-Judge 质量评分 + 人工兜底
+- **字幕**：step6 渲染后用 ffmpeg ASS 烧录中文硬字幕（默认开启 `JobConfig.subtitles`，跟随 DESIGN 主题取色，无配音模式跳过，烧录失败不阻塞任务）
+- **完整设计文档**：`docs/superpowers/specs/` 下共 7 份已确认 spec —— `2026-08-04-hf-studio-design.md`（主设计）、`2026-08-05-channels-ui-design.md`（模型渠道页）、`2026-08-05-newjob-wizard-cjk-font-design.md`（新建任务向导 + CJK 字体）、`2026-08-05-timing-themes-quality-design.md`（节奏/主题/质量）、`2026-08-05-vd-manager-design.md`（vd 管理工具）、`2026-08-12-concurrency-design.md`（固定并发 worker 池）、`2026-08-12-subtitles-design.md`（硬字幕烧录）；实施计划见 `docs/superpowers/plans/`
 
 ### 7 步流水线（`server/src/pipeline/steps/`）
 
@@ -86,7 +89,7 @@
 | 3 配音 | step3-tts | `narration.wav` + 词级 `transcript.json` | 音频非空、时长偏差 ≤30%（ffprobe 真实边界） |
 | 4 构建 | step4-build | `compositions/*.html`（每 beat 一次独立 LLM 调用） | `hyperframes lint` 零错误（带报错重试 ≤3 次） |
 | 5 验证 | step5-validate | 关键帧快照 `snapshots/*.png` | `hyperframes check` 零错误 |
-| 6 渲染 | step6-render | `renders/output.mp4` | ffprobe 验时长/视频流 |
+| 6 渲染 | step6-render | `renders/output.mp4`（随后 ASS 烧录中文字幕） | ffprobe 验时长/视频流 |
 
 - 任务断点续跑：任一步失败停在失败步骤，解决后从该步继续；重跑某步后下游标记 stale 待重跑
 - 提示词模板在 `server/src/prompts/`（txt），与代码分离、可编辑；内含**质量红线**（反平庸/反默认模板感），改提示词时保持
@@ -105,11 +108,15 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
 │   │   ├── 2026-08-05-channels-ui-design.md
 │   │   ├── 2026-08-05-newjob-wizard-cjk-font-design.md
 │   │   ├── 2026-08-05-timing-themes-quality-design.md
-│   │   └── 2026-08-05-vd-manager-design.md
+│   │   ├── 2026-08-05-vd-manager-design.md
+│   │   ├── 2026-08-12-concurrency-design.md
+│   │   └── 2026-08-12-subtitles-design.md
 │   └── plans/                       #   实施计划（子代理执行用）
 │       ├── 2026-08-04-hf-studio.md
 │       ├── 2026-08-05-newjob-wizard-cjk-font.md
-│       └── 2026-08-05-timing-themes-quality.md
+│       ├── 2026-08-05-timing-themes-quality.md
+│       ├── 2026-08-12-concurrency.md
+│       └── 2026-08-12-subtitles.md
 └── hf-studio/                       # 子项目根（HF-Studio 应用）
     ├── vd.ts                        # 管理工具（vd：一条龙启动/停止/依赖检测，可 ln -s 到 /usr/local/bin/vd）
     ├── README.md                    # 完整架构说明 + 快速开始
@@ -131,11 +138,12 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
     │   │   ├── judge/               # LLM-as-Judge 评分器
     │   │   ├── pipeline/            # engine.ts 状态机 + steps/step0-6 + beat-timing + root-html
     │   │   ├── prompts/             # 提示词模板（parse/design/storyboard/build-beat/fix-beat/judge-rubric）
-    │   │   ├── render/              # hyperframes CLI 封装（lint/check/snapshot/render）+ resolutions
+    │   │   ├── render/              # service.ts（hyperframes CLI 封装：lint/check/snapshot/render）+ resolutions.ts
     │   │   ├── tts/                 # Edge-TTS 服务
-    │   │   ├── subtitle/            # ASS 字幕生成 + ffmpeg 烧录
+    │   │   ├── subtitle/            # ass.ts（ASS 字幕纯函数生成）+ burn.ts（ffmpeg 烧录）
     │   │   └── util/                # ffprobe / clean-output
-    │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway/store/tts 等 + fixtures/mock-transport.ts）
+    │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway/store/tts/subtitle 等
+    │   │                            #   + engine-concurrency + fixtures/mock-transport.ts + e2e.config.sample.json）
     │   ├── scripts/e2e-smoke.ts     # 真实 E2E 冒烟
     │   └── bun.lock
     ├── web/                         # React 前端（中文界面）
@@ -149,8 +157,10 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
     ├── data/                        # 运行时数据（gitignored，新环境自动重建）
     │   ├── jobs.db                  # SQLite
     │   ├── channels.json            # 用户渠道 key（明文，gitignored）
-    │   └── projects/<jobId>/        # 每任务完整产物（assets/ brief.json DESIGN.md STORYBOARD.md
-    │                                #   SCRIPT.md transcript.json compositions/ snapshots/ renders/output.mp4）
+    │   └── projects/<jobId>/        # 每任务完整产物（即标准 HyperFrames 项目，可用官方 CLI 继续编辑）：
+    │                                #   brief.json DESIGN.md STORYBOARD.md SCRIPT.md transcript.json check.json
+    │                                #   meta.json hyperframes.json package.json index.html
+    │                                #   assets/ compositions/ snapshots/ renders/output.mp4
     └── test/vd.test.ts              # vd 工具单元/集成测试
 ```
 
@@ -179,6 +189,7 @@ hf-studio/                            # git 仓库根（分支 master，GitHub: 
 - 新步骤：在 `pipeline/steps/` 建 `stepN-*.ts`（输入/执行/输出/校验门 四段式）并在 `steps/index.ts` 注册；每步独立可测
 - 提示词改动：改 `src/prompts/*.txt`，保持现有质量红线与 CJK 字体约束；不改代码里的硬编码 prompt
 - 渲染/字体：产物 HTML 强制 CJK 字体栈（`system-ui` 无中文字形会变方块字）；`@font-face` 由服务端注入
+- 字幕：改动走 `src/subtitle/ass.ts`（纯函数：样式取色优先级 主题 hue → DESIGN.md 首个 HEX → 兜底白色）与 `burn.ts`（ffmpeg `ass=` filter，需 libass/fontconfig）；默认开启、按 beat 整句、烧录失败只告警不判失败；无配音模式（`voiceover=false`）跳过
 - 文档习惯：设计/计划写进 `docs/superpowers/specs|plans/`，文件名 `YYYY-MM-DD-主题.md`；已确认的 spec 才是实现依据
 - 提交：小步、原子、信息清晰（参考现有历史，如 `feat:` / `fix:` / `test:` 前缀）
 
