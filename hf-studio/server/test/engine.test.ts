@@ -143,4 +143,23 @@ describe("PipelineEngine", () => {
     expect(store.getJob(rerunId)?.status).toBe("completed");
     expect(order).toEqual(["s0:" + rerunId, "s1:" + rerunId, "s0:" + slowId, "s1:" + slowId, "s1:" + rerunId]);
   });
+
+  test("missing step function marks job failed, not completed", async () => {
+    const steps: StepFn[] = [
+      async () => ({ status: "passed", artifacts: [], data: {}, log: "s0" }),
+      undefined as unknown as StepFn, // 步骤数组中间缺注册 → 必须失败而非误标 completed
+      async () => ({ status: "passed", artifacts: [], data: {}, log: "s2" }),
+    ];
+    const engine = new PipelineEngine({ store, steps, services: { render: () => ({}) } as unknown as Services, projectRoot: dir });
+    const events: string[] = [];
+    engine.onEvent((e) => events.push(e.type));
+    const jobId = store.createJob(cfg);
+    await engine.processNext();
+    const job = store.getJob(jobId);
+    expect(job?.status).toBe("failed");
+    expect(job?.currentStep).toBe(1);
+    expect(job?.error).toContain("未注册");
+    expect(events).toContain("job_status");
+    expect(store.getStepOutputs(jobId).map((o) => o.step)).toEqual([0]);
+  });
 });

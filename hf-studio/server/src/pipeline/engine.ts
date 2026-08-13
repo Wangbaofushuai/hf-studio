@@ -123,7 +123,14 @@ export class PipelineEngine {
 
       for (let step = startStep; step < this.opts.steps.length; step++) {
         const stepFn = this.opts.steps[step];
-        if (!stepFn) { lastStatus = "failed"; break; }
+        if (!stepFn) {
+          // 步骤未注册（steps 数组空洞）：直接失败返回，绝不落到下方 updateJob(completed)。
+          // 若此处 break 后继续，任务会被误标 completed——回归测试覆盖此路径。
+          const msg = `步骤 ${step} 未注册`;
+          store.updateJob(jobId, { status: "failed", currentStep: step as StepId, error: msg });
+          this.emit({ type: "job_status", jobId, status: "failed", currentStep: step as StepId, message: msg });
+          return;
+        }
         store.beginStep(jobId, step as StepId);
         this.emit({ type: "step_status", jobId, step: step as StepId, status: "running", log: "" });
         const out = await this.runStepWithRetries(step as StepId, stepFn, jobId, projectDir, job.config.models, prev, llm, judge);
@@ -145,6 +152,7 @@ export class PipelineEngine {
       // 每轮都是微任务，事件循环（含 HTTP server）会挂死无恢复。
       const msg = e instanceof Error ? e.message : String(e);
       store.updateJob(jobId, { status: "failed", error: msg });
+      this.emit({ type: "job_status", jobId, status: "failed", currentStep: null, message: msg });
     }
   }
 
