@@ -6,7 +6,7 @@ import {
   VdState, loadState, saveState, clearState, statePath,
   isPidAlive, checkHealth, spawnDetached, stopProject,
   checkDeps, which, resolveProjectRoot, isPrivateIp, installCheck,
-  findGitRoot, missingChromeRuntimeLibs,
+  findGitRoot, missingChromeRuntimeLibs, nodeOk,
 } from "../vd";
 
 function tmpRoot(): string {
@@ -133,10 +133,10 @@ describe("vd core", () => {
   test("installCheck installs fonts-noto-cjk via apt for CJK fonts", async () => {
     const root = tmpRoot();
     let called = "";
-    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "" }; };
+    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "", stderr: "" }; };
     const dep = { name: "中文字体（CJK）", ok: false, hostAffects: true, action: "apt" };
-    const ok = await installCheck(root, dep, run as never);
-    expect(ok).toBe(true);
+    const r = await installCheck(root, dep, run as never);
+    expect(r.ok).toBe(true);
     expect(called).toBe("apt-get install -y fonts-noto-cjk");
     rmSync(root, { recursive: true, force: true });
   });
@@ -188,23 +188,13 @@ describe("vd core", () => {
   test("installCheck installs Chrome runtime packages via apt", async () => {
     const root = tmpRoot();
     let called = "";
-    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "" }; };
+    const run = async (cmd: string, args: string[]) => { called = `${cmd} ${args.join(" ")}`; return { code: 0, stdout: "", stderr: "" }; };
     const dep = { name: "Chrome 运行库", ok: false, hostAffects: true, action: "apt" };
-    const ok = await installCheck(root, dep, run as never);
-    expect(ok).toBe(true);
+    const r = await installCheck(root, dep, run as never);
+    expect(r.ok).toBe(true);
     expect(called).toContain("apt-get install -y");
     expect(called).toContain("libnss3");
     expect(called).toContain("libxkbcommon-x11-0");
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  test("checkDeps flags missing server/config.json (preset channels)", async () => {
-    const root = tmpRoot();
-    const run = async () => ({ code: 1, stdout: "" });
-    const deps = await checkDeps(root, run as never);
-    const cfg = deps.find((d) => d.name === "渠道配置");
-    expect(cfg?.ok).toBe(false);
-    expect(cfg?.hostAffects).toBe(false); // 项目内自动修复，不询问
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -213,9 +203,72 @@ describe("vd core", () => {
     mkdirSync(join(root, "server"), { recursive: true });
     writeFileSync(join(root, "server", "config.example.json"), JSON.stringify({ presetChannels: [{ id: "deepseek" }] }));
     const dep = { name: "渠道配置", ok: false, hostAffects: false, action: "重建" };
-    const ok = await installCheck(root, dep);
-    expect(ok).toBe(true);
+    const r = await installCheck(root, dep);
+    expect(r.ok).toBe(true);
     expect(JSON.parse(readFileSync(join(root, "server", "config.json"), "utf8")).presetChannels[0].id).toBe("deepseek");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("nodeOk requires node >= 22", async () => {
+    const run = async (cmd: string, args: string[]) => {
+      if (cmd === "which" && args[0] === "node") return { code: 0, stdout: "/usr/bin/node", stderr: "" };
+      if (cmd === "node") return { code: 0, stdout: "v22.12.0", stderr: "" };
+      return { code: 1, stdout: "", stderr: "" };
+    };
+    expect(await nodeOk(run as never)).toBe(true);
+  });
+
+  test("nodeOk rejects missing or old node", async () => {
+    const none = async () => ({ code: 1, stdout: "", stderr: "" });
+    expect(await nodeOk(none as never)).toBe(false);
+    const old = async (cmd: string, args: string[]) =>
+      cmd === "which" ? { code: 0, stdout: "/usr/bin/node", stderr: "" } : { code: 0, stdout: "v18.19.1", stderr: "" };
+    expect(await nodeOk(old as never)).toBe(false);
+  });
+
+  test("checkDeps flags missing node as host-affecting", async () => {
+    const root = tmpRoot();
+    mkdirSync(join(root, "server", "node_modules"), { recursive: true });
+    writeFileSync(join(root, "server", "config.json"), JSON.stringify({ providers: [{ apiKey: "sk-REAL" }] }));
+    const run = async (cmd: string, args: string[]) =>
+      cmd === "which" && args[0] === "node" ? { code: 1, stdout: "", stderr: "" } : { code: 1, stdout: "", stderr: "" };
+    const deps = await checkDeps(root, run as never);
+    const node = deps.find((d) => d.name === "node");
+    expect(node?.ok).toBe(false);
+    expect(node?.hostAffects).toBe(true);
+    expect(node?.detail).toContain("22");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("installCheck node runs NodeSource setup then apt-get nodejs", async () => {
+    const root = tmpRoot();
+    const calls: string[] = [];
+    const run = async (cmd: string, args: string[]) => { calls.push(`${cmd} ${args.join(" ")}`); return { code: 0, stdout: "", stderr: "" }; };
+    const dep = { name: "node", ok: false, hostAffects: true, action: "nodesource" };
+    const r = await installCheck(root, dep, run as never);
+    expect(r.ok).toBe(true);
+    expect(calls.some((c) => c.includes("nodesource.com/setup_22.x"))).toBe(true);
+    expect(calls).toContain("apt-get install -y nodejs");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("installCheck returns stderr detail on failure", async () => {
+    const root = tmpRoot();
+    const run = async () => ({ code: 1, stdout: "", stderr: "E: dpkg was interrupted" });
+    const dep = { name: "ffmpeg/ffprobe", ok: false, hostAffects: true, action: "apt" };
+    const r = await installCheck(root, dep, run as never);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("dpkg");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("checkDeps flags missing server/config.json (preset channels)", async () => {
+    const root = tmpRoot();
+    const run = async () => ({ code: 1, stdout: "", stderr: "" });
+    const deps = await checkDeps(root, run as never);
+    const cfg = deps.find((d) => d.name === "渠道配置");
+    expect(cfg?.ok).toBe(false);
+    expect(cfg?.hostAffects).toBe(false); // 项目内自动修复，不询问
     rmSync(root, { recursive: true, force: true });
   });
 });

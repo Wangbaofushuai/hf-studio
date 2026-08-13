@@ -163,21 +163,30 @@ export async function checkHealth(url: string, timeoutMs = 60_000, intervalMs = 
 
 // ─────────────────────────── 依赖检测 ───────────────────────────
 
-export interface CmdResult { code: number; stdout: string }
+export interface CmdResult { code: number; stdout: string; stderr: string }
 export interface CmdOpts { cwd?: string }
 export type CmdRunner = (cmd: string, args: string[], opts?: CmdOpts) => Promise<CmdResult>;
 
 export const defaultRunner: CmdRunner = async (cmd, args, opts) => {
   try {
-    const { stdout } = await execFileP(cmd, args, { cwd: opts?.cwd, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
-    return { code: 0, stdout: String(stdout) };
+    const { stdout, stderr } = await execFileP(cmd, args, { cwd: opts?.cwd, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+    return { code: 0, stdout: String(stdout), stderr: String(stderr) };
   } catch (e: any) {
-    return { code: typeof e.code === "number" ? e.code : 1, stdout: String(e.stdout ?? "") };
+    return { code: typeof e.code === "number" ? e.code : 1, stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? "") };
   }
 };
 
 export async function which(cmd: string, run: CmdRunner = defaultRunner): Promise<boolean> {
   return (await run("which", [cmd])).code === 0;
+}
+
+/** node ≥ 22（hyperframes CLI 的 engines 要求）；缺失或过旧返回 false */
+export async function nodeOk(run: CmdRunner = defaultRunner): Promise<boolean> {
+  if ((await run("which", ["node"])).code !== 0) return false;
+  const r = await run("node", ["--version"]);
+  const m = /^v?(\d+)/.exec(r.stdout.trim());
+  if (!m) return false;
+  return Number(m[1]) >= 22;
 }
 
 export interface DepCheck {
@@ -241,6 +250,11 @@ export async function checkDeps(root: string, run: CmdRunner = defaultRunner): P
       action: "curl -fsSL https://bun.sh/install | bash（安装到 ~/.bun，宿主机变更）",
     },
     {
+      name: "node", ok: await nodeOk(run), hostAffects: true,
+      action: "curl -fsSL https://deb.nodesource.com/setup_22.x | bash && apt-get install -y nodejs（系统级安装，需 root）",
+      detail: "hyperframes CLI 需要 node ≥ 22（渲染/快照必需；Ubuntu apt 自带 node 18 过旧）",
+    },
+    {
       name: "server 依赖", ok: existsSync(join(root, "server", "node_modules")), hostAffects: false,
       action: "cd server && bun install（项目内，自动）",
     },
@@ -285,34 +299,58 @@ export async function checkDeps(root: string, run: CmdRunner = defaultRunner): P
 
 // ─────────────────────────── 安装执行 ───────────────────────────
 
-export async function installCheck(root: string, check: DepCheck, run: CmdRunner = defaultRunner): Promise<boolean> {
+export interface InstallResult { ok: boolean; error?: string }
+
+/** 安装依赖；返回 { ok, error? } —— error 附命令 stderr 摘要，让用户能诊断失败原因 */
+export async function installCheck(root: string, check: DepCheck, run: CmdRunner = defaultRunner): Promise<InstallResult> {
+  const fail = (r: CmdResult, what: string): InstallResult =>
+    ({ ok: false, error: `${what}: ${(r.stderr || r.stdout).trim().slice(0, 300) || "无输出"}` });
   switch (check.name) {
-    case "server 依赖":
-      return (await run("bun", ["install"], { cwd: join(root, "server") })).code === 0;
-    case "web 依赖":
-      return (await run("bun", ["install"], { cwd: join(root, "web") })).code === 0;
-    case "ffmpeg/ffprobe":
-      return (await run("apt-get", ["install", "-y", "ffmpeg"])).code === 0;
+    case "server 依赖": {
+      const r = await run("bun", ["install"], { cwd: join(root, "server") });
+      return r.code === 0 ? { ok: true } : fail(r, "bun install server");
+    }
+    case "web 依赖": {
+      const r = await run("bun", ["install"], { cwd: join(root, "web") });
+      return r.code === 0 ? { ok: true } : fail(r, "bun install web");
+    }
+    case "ffmpeg/ffprobe": {
+      const r = await run("apt-get", ["install", "-y", "ffmpeg"]);
+      return r.code === 0 ? { ok: true } : fail(r, "apt-get install ffmpeg");
+    }
+    case "node": {
+      const setup = await run("bash", ["-c", "curl -fsSL https://deb.nodesource.com/setup_22.x | bash"]);
+      if (setup.code !== 0) return fail(setup, "NodeSource 源配置");
+      const r = await run("apt-get", ["install", "-y", "nodejs"]);
+      return r.code === 0 ? { ok: true } : fail(r, "apt-get install nodejs");
+    }
     case "Chrome Headless": {
       const bin = join(root, "server", "node_modules", ".bin", "hyperframes");
-      return (await run(bin, ["browser", "ensure"], { cwd: join(root, "server") })).code === 0;
+      const r = await run(bin, ["browser", "ensure"], { cwd: join(root, "server") });
+      return r.code === 0 ? { ok: true } : fail(r, "hyperframes browser ensure");
     }
-    case "Chrome 运行库":
-      return (await run("apt-get", ["install", "-y", ...CHROME_RUNTIME_PKGS])).code === 0;
-    case "中文字体（CJK）":
-      return (await run("apt-get", ["install", "-y", "fonts-noto-cjk"])).code === 0;
+    case "Chrome 运行库": {
+      const r = await run("apt-get", ["install", "-y", ...CHROME_RUNTIME_PKGS]);
+      return r.code === 0 ? { ok: true } : fail(r, "apt-get install Chrome 运行库");
+    }
+    case "中文字体（CJK）": {
+      const r = await run("apt-get", ["install", "-y", "fonts-noto-cjk"]);
+      return r.code === 0 ? { ok: true } : fail(r, "apt-get install fonts-noto-cjk");
+    }
     case "渠道配置": {
       const example = join(root, "server", "config.example.json");
       const target = join(root, "server", "config.json");
-      if (existsSync(target)) return true;
-      if (!existsSync(example)) return false;
+      if (existsSync(target)) return { ok: true };
+      if (!existsSync(example)) return { ok: false, error: "config.example.json 不存在" };
       copyFileSync(example, target);
-      return existsSync(target);
+      return { ok: existsSync(target) };
     }
-    case "bun":
-      return (await run("bash", ["-c", "curl -fsSL https://bun.sh/install | bash"])).code === 0;
+    case "bun": {
+      const r = await run("bash", ["-c", "curl -fsSL https://bun.sh/install | bash"]);
+      return r.code === 0 ? { ok: true } : fail(r, "bun 安装");
+    }
     default:
-      return true;
+      return { ok: true };
   }
 }
 
@@ -418,8 +456,12 @@ export async function startFlow(root: string, rl: import("node:readline/promises
         continue;
       }
     }
-    const ok = await installCheck(root, d);
-    console.log(`${ok ? "✓" : "✗"} ${d.name}${ok ? " 就绪" : " 安装失败"}`);
+    const r = await installCheck(root, d);
+    if (r.ok) {
+      console.log(`✓ ${d.name} 就绪`);
+    } else {
+      console.log(`✗ ${d.name} 安装失败${r.error ? `：${r.error}` : ""}`);
+    }
   }
 
   // LLM 渠道 key 提示（不阻塞启动）
