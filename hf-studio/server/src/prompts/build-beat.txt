@@ -14,9 +14,10 @@
 3. 时间轴：注册且只注册一个 window.__timelines["beat-N"] = gsap.timeline({ paused: true })，同步构建。
    根元素 data-duration 即片段时长；不要嵌套子时间轴，不要 gsap 操作片段外的元素。
 4. 动画：完全由 gsap 时间线驱动，位置用片段本地秒（0..data-duration）。
-   - 所有动画元素 CSS 初始态 = 可见终态（opacity:1、transform:none）——导出时子合成时间线可能不 seek，
-     内容必须"不靠时间线也完整可见"；
-   - 所有 fromTo 必须携带 immediateRender:false（gsap 不会在构建时应用隐藏起点）；
+   - CSS 初始态写成"可见终态"（opacity:1、transform:none），仅作为无脚本/脚本失败时的兜底；
+   - 入场动画一律用 fromTo 且保持默认 immediateRender（构建时立即应用 from 起点）：
+     渲染从第一帧就是隐藏态、随本地时间轴进场；**严禁写 immediateRender:false** ——
+     它会让视频开头先完整显示终态画面、再跳回隐藏态重播一遍动画（严重穿帮）；
    - 禁止 class="clip" 与 data-start/data-duration/data-track-index（只属于宿主槽位，子合成内使用会
      触发平台 clip 窗口机制，窗口外元素被隐藏）；
    - 用 fromTo 而非 from；禁止 repeat:-1 / 渲染时钟 / Math.random() / 网络请求 / gsap 操作片段外元素。
