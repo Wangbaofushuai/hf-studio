@@ -101,8 +101,8 @@ export default function NewJob() {
     window.scrollTo({ top: 0 });
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
     setBusy(true); setError("");
     if (!finalModel) {
       setError("请选择一个模型渠道并填写 Key（或展开「临时自定义渠道」）");
@@ -142,7 +142,15 @@ export default function NewJob() {
   const formatLabel = FORMATS.find((f) => f.id === format)?.label ?? format;
 
   return (
-    <form onSubmit={submit} className="space-y-8">
+    // onSubmit 仅兜底键盘回车：step<2 时回车 = 下一步（修正：入口不能因回车/按钮类型切换而提前创建任务）
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (step < 2) { goNext(); return; }
+        void submit();
+      }}
+      className="space-y-8"
+    >
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">新建视频任务</h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">输入想法与素材，交给流水线生成你的视频。</p>
@@ -381,9 +389,11 @@ export default function NewJob() {
           <button type="button" onClick={goBack} className="btn-secondary w-36 py-3">上一步</button>
         )}
         {step < 2 ? (
-          <button type="button" onClick={goNext} className="btn-primary flex-1 py-3 text-base">下一步</button>
+          // 关键：始终 type="button"。曾用 type="submit"，点击时 React 会原地改写同一 DOM 节点为 submit，
+          // 浏览器随即执行默认提交行为 → 点「下一步」直接创建任务、跳过第三步（2026-09-28 修复）
+          <button key="wizard-next" type="button" onClick={goNext} className="btn-primary flex-1 py-3 text-base">下一步</button>
         ) : (
-          <button type="submit" disabled={busy} className="btn-primary flex-1 py-3 text-base">
+          <button key="wizard-submit" type="button" onClick={() => void submit()} disabled={busy} className="btn-primary flex-1 py-3 text-base">
             {busy ? "提交中…" : "生成视频"}
           </button>
         )}
