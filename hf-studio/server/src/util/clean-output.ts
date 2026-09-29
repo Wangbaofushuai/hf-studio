@@ -80,6 +80,22 @@ export function stripClipAttrs(html: string): string {
   return restoreScript(out);
 }
 
+/** 子合成（beat）动画规范化——确定性兜底，不依赖 LLM 自觉（2026-09-28 实测两个穿帮根因）：
+ *  1) 删除 `immediateRender: false`：入场 fromTo 必须用默认值（构建时立即应用隐藏起点）；
+ *     写了 false 会让首帧停在 CSS 可见终态 → 视频"先全显、再跳回隐藏重播一遍"。
+ *  2) 把 `tl.fromTo(targets, { opacity: 1 }, {...})` 改写为 `tl.to(targets, {...})`：
+ *     fromTo 的"可见"起点同样会在构建时被 GSAP 立即应用，时间线尚未 seek 的首帧会露出
+ *     完整终态画面（实测 beat-2 闪现根因）；仅当 from 对象恰好是 { opacity: 1 } 时转换，语义等价。
+ *  immediateRender 与 fromTo 都出现在 <script> 内（JS 代码而非标记），故本函数不保护脚本内容。 */
+export function normalizeBeatAnimations(html: string): string {
+  let out = html
+    .replace(/,\s*immediateRender\s*:\s*false\b/g, "")   // 属性在末尾：连同前面的逗号一起删
+    .replace(/immediateRender\s*:\s*false\s*,\s*/g, "")  // 属性在开头/中间：连同后面的逗号一起删
+    .replace(/immediateRender\s*:\s*false\b/g, "");      // 兜底：单独属性
+  out = out.replace(/tl\.fromTo\(([^{}]*?),\s*\{\s*opacity\s*:\s*1\s*\}\s*,\s*/g, (_m, targets) => `tl.to(${targets}, `);
+  return out;
+}
+
 /** 保证子合成有合法的根元素：优先补属性（ensureRootAttrs），根 div 不存在时
  *  把 <template> 内容整体包进规范根 div（id="root" + data-composition-id/width/height）。
  *  LLM 偶发整段漏写根元素（只写 #root{} CSS 无 div）→ lint root_missing_* 反复失败重试；

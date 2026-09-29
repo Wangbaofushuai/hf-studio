@@ -4,7 +4,7 @@ import type { StepContext, StepFn, StepResult, Beat } from "../../types";
 import type { LintFinding } from "../../render/service";
 import { generateRootHtml } from "../root-html";
 import { RESOLUTIONS } from "../../render/resolutions";
-import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
+import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, normalizeBeatAnimations, ensureRootWrapper } from "../../util/clean-output";
 // 注意：SYSTEM 提示词在模块加载时通过 readFileSync 读取（src/prompts/build-beat.txt）。
 // bun --watch 不监控 .txt，改动提示词后需触发本文件内容变化（或重启服务）才能生效。
 // 2026-08-10 提示词已强化：布局纪律（防 content_overlap）+ 素材硬约束（防幻觉素材）+ 脚本安全（防 root.getElementById）。
@@ -107,7 +107,8 @@ export const step4Build: StepFn = async (ctx: StepContext, prev): Promise<StepRe
       const file = join(ctx.projectDir, "compositions", `${beat.id}.html`);
       // 剥离模型可能包裹的 markdown 代码围栏（推理模型习惯性输出 ```html ... ```，
       // 直接写盘会让 hyperframes 解析失败——E2E 实测 lint 报 root_missing_composition_id 等）
-      writeFileSync(file, ensureRootWrapper(stripClipAttrs(ensureCjkFontStack(stripCodeFences(content))), { id: beat.id, w, h }));
+      // 动画契约修正（2026-09-28）：确定性规范化 beat 动画（去掉 immediateRender:false、可见起点 fromTo 改 to()），避免"首帧全显/提前显形"穿帮
+      writeFileSync(file, ensureRootWrapper(normalizeBeatAnimations(stripClipAttrs(ensureCjkFontStack(stripCodeFences(content)))), { id: beat.id, w, h }));
 
       const lint = await ctx.render.lint();
       // 逐 beat lint 门：过滤"引用尚未写入的合成"类错误（写 beat 过程中必然出现），

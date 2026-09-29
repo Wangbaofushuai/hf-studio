@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ensureCjkFontStack, stripClipAttrs, ensureRootAttrs, ensureRootWrapper } from "../src/util/clean-output";
+import { ensureCjkFontStack, stripClipAttrs, normalizeBeatAnimations, ensureRootAttrs, ensureRootWrapper } from "../src/util/clean-output";
 
 const CJK = `font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;`;
 
@@ -114,6 +114,57 @@ describe("stripClipAttrs", () => {
     expect(a).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
     const b = ensureCjkFontStack(src);
     expect(b).toContain(`const s = 'class="clip" data-start="0.5" font-family: "Noto Sans SC", sans-serif;'`);
+  });
+});
+
+describe("normalizeBeatAnimations", () => {
+  test("删除末尾/开头/单独的 immediateRender:false，其余属性保留", () => {
+    const src = [
+      `tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.6, immediateRender: false }, 0.5);`,
+      `tl.fromTo(a, { y: 10 }, { y: 0, immediateRender:false, duration: 0.4 }, 0);`,
+      `tl.fromTo(b, { immediateRender: false, opacity: 0 }, { opacity: 1 }, 0);`,
+      `tl.fromTo(c, { immediateRender : false }, { scale: 1 }, 0);`,
+    ].join("\n");
+    const out = normalizeBeatAnimations(src);
+    expect(out).not.toContain("immediateRender");
+    expect(out).toContain("duration: 0.6");
+    expect(out).toContain("duration: 0.4");
+    expect(out).toContain("{ opacity: 0 }, { opacity: 1 }");
+    expect(out).toContain("{ opacity: 0 }, { opacity: 1 }, 0)"); // b 的属性被删后仍是合法对象
+  });
+
+  test("immediateRender:true 与其它 true 值不动", () => {
+    const src = `tl.fromTo(el, { opacity: 0 }, { opacity: 1, immediateRender: true, paused: false });`;
+    expect(normalizeBeatAnimations(src)).toBe(src);
+  });
+
+  test("退场/强调的 { opacity: 1 } 起点 fromTo 改写为 to()（含多行与数组目标）", () => {
+    const src = [
+      `tl.fromTo([card, legend, value].filter(Boolean),`,
+      `  { opacity: 1 },`,
+      `  { opacity: 0, x: -60, duration: 0.5, ease: "power2.in" }, 6.3);`,
+      `tl.fromTo(glow, {opacity: 1}, { opacity: 1.35, yoyo: true, repeat: 1 }, 4.6);`,
+    ].join("\n");
+    const out = normalizeBeatAnimations(src);
+    expect(out).not.toContain("fromTo([card");
+    expect(out).toContain("tl.to([card, legend, value].filter(Boolean),");
+    expect(out).toContain("tl.to(glow, { opacity: 1.35, yoyo: true, repeat: 1 }, 4.6);");
+    expect(out).not.toContain("{ opacity: 1 },");
+  });
+
+  test("隐藏起点 fromTo（opacity:0 / 0.9）与普通 to() 不动", () => {
+    const src = [
+      `tl.fromTo(el, { opacity: 0, y: 20 }, { opacity: 1, duration: 0.5 }, 0.2);`,
+      `tl.fromTo(ring, { opacity: 0.9, scale: 0.7 }, { opacity: 0, scale: 1.5 }, 2.4);`,
+      `tl.to(x, { opacity: 0, duration: 0.5 }, 6.3);`,
+    ].join("\n");
+    expect(normalizeBeatAnimations(src)).toBe(src);
+  });
+
+  test("删除后仍然是合法 JS 对象（用 Function 构造验证）", () => {
+    const src = `const v = { opacity: 1, immediateRender: false }; const w = { immediateRender: false, x: 1 }; const u = { immediateRender: false };`;
+    const out = normalizeBeatAnimations(src);
+    expect(() => new Function(out)).not.toThrow();
   });
 });
 describe("ensureRootAttrs", () => {

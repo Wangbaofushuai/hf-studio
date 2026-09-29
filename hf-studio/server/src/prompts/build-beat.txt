@@ -16,11 +16,15 @@
 4. 动画：完全由 gsap 时间线驱动，位置用片段本地秒（0..data-duration）。
    - CSS 初始态写成"可见终态"（opacity:1、transform:none），仅作为无脚本/脚本失败时的兜底；
    - 入场动画一律用 fromTo 且保持默认 immediateRender（构建时立即应用 from 起点）：
-     渲染从第一帧就是隐藏态、随本地时间轴进场；**严禁写 immediateRender:false** ——
-     它会让视频开头先完整显示终态画面、再跳回隐藏态重播一遍动画（严重穿帮）；
+     渲染从第一帧就是隐藏态、随本地时间轴进场；**严禁写 immediateRender:false**；
+   - **退场动画一律用 to()，禁止用 fromTo 写退场**：fromTo 的"可见"起点（如 { opacity: 1 }）会被
+     gsap 在构建时立即应用，时间线尚未 seek 的首帧会露出完整终态画面（实测闪现根因）；
+   - 强调/脉冲类效果（先显后隐，如光环扩散、高亮脉冲）必须以隐藏态为起点：拆成
+     "fromTo 从 opacity:0 淡入 → to() 扩散/淡出"两段；任何 fromTo 的 from 态不得是可见态
+     或半可见态（如 opacity:0.4/0.9）——那会让元素在片段开头提前显形；
    - 禁止 class="clip" 与 data-start/data-duration/data-track-index（只属于宿主槽位，子合成内使用会
      触发平台 clip 窗口机制，窗口外元素被隐藏）；
-   - 用 fromTo 而非 from；禁止 repeat:-1 / 渲染时钟 / Math.random() / 网络请求 / gsap 操作片段外元素。
+   - 用 fromTo 而非 from（仅指入场）；禁止 repeat:-1 / 渲染时钟 / Math.random() / 网络请求 / gsap 操作片段外元素。
 5. 脚本安全（挂载期不得抛错，抛错则该片段时间线不注册）：
    - 脚本第一行：window.__timelines = window.__timelines || {};（子合成脚本可能先于宿主脚本执行）；
    - DOM 查询用本片段唯一的类/ID（前缀 beat-N-），禁止 "#root ..." 全局前缀选择（文档中存在多个 #root，

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
-import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, ensureRootWrapper } from "../../util/clean-output";
+import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, normalizeBeatAnimations, ensureRootWrapper } from "../../util/clean-output";
 import { RESOLUTIONS } from "../../render/resolutions";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
@@ -66,7 +66,8 @@ export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<Ste
       const beatId = abs.split("/").pop()?.replace(/\.html$/, "") ?? "beat";
       // 与 step4 同链：修复输出同样必须强制根元素/字体/无 clip（否则同一确定性错误反复 3 次重试，纯耗 LLM）
       const { w, h } = RESOLUTIONS[ctx.config.format];
-      writeFileSync(abs, ensureRootWrapper(stripClipAttrs(ensureCjkFontStack(stripCodeFences(fixed))), { id: beatId, w, h }));
+      // 动画契约修正（2026-09-28）：确定性规范化 beat 动画（去掉 immediateRender:false、可见起点 fromTo 改 to()），避免"首帧全显/提前显形"穿帮
+  writeFileSync(abs, ensureRootWrapper(normalizeBeatAnimations(stripClipAttrs(ensureCjkFontStack(stripCodeFences(fixed)))), { id: beatId, w, h }));
     }
     check = await ctx.render.check();
   }
