@@ -79,7 +79,8 @@
 - **外部依赖**：Edge-TTS（配音）、hyperframes CLI（渲染，底层 FFmpeg + headless Chrome）、OpenAI 兼容 LLM API（DeepSeek / GLM / Qwen / OpenAI / Kimi 预设 + 前端 BYOK 自定义渠道）
 - **稳定性工程化**：固定并发 worker 池（默认 2，`HF_STUDIO_CONCURRENCY` 可调，FIFO 出队）+ 每步校验门 + 自动重试 + LLM-as-Judge 质量评分 + 人工兜底
 - **字幕**：step6 渲染后用 ffmpeg ASS 烧录中文硬字幕（默认开启 `JobConfig.subtitles`，跟随 DESIGN 主题取色，无配音模式跳过，烧录失败不阻塞任务）
-- **完整设计文档**：`docs/superpowers/specs/` 下共 7 份已确认 spec —— `2026-08-04-hf-studio-design.md`（主设计）、`2026-08-05-channels-ui-design.md`（模型渠道页）、`2026-08-05-newjob-wizard-cjk-font-design.md`（新建任务向导 + CJK 字体）、`2026-08-05-timing-themes-quality-design.md`（节奏/主题/质量）、`2026-08-05-vd-manager-design.md`（vd 管理工具）、`2026-08-12-concurrency-design.md`（固定并发 worker 池）、`2026-08-12-subtitles-design.md`（硬字幕烧录）；实施计划见 `docs/superpowers/plans/`
+- **制作方式（2026-09-29 新增）**：`JobConfig.mode` = `hyperframes`（默认，代码渲染）/ `jimeng`（即梦画布 CLI AI 直出）——jimeng 复用 0–3 步（brief/design/storyboard/TTS），**step2 走专用提示词**（内容类型 + 视觉设定 visual bible + 镜头语言 shotType/visualAction，禁逐句直译旁白），**直出优先**（时长 ≤ 模型单次上限则单条生成，超限才拆片段拼接）；表演型内容由即梦**原生台词配音**（人物口型同步，不叠 Edge-TTS）；**片段时长由台词反推**（4 字/秒，夹到 4s–模型上限，不逼台词凑目标时长）；**定妆图用写实图片模型 + 写实提示词**（seedream_5.0_pro；风格决定成片观感）；向导「思考深度」映射 0–2 步 LLM 的 thinking/reasoningEffort（fast=关/均衡=中/深=高）；**step4 先生成定妆图锚点 → 所有 beat m2v 引用同一主体**（有用户素材优先），step5 片段 probe、step6 拼接/直出 + 字幕（钩子标题已按用户反馈移除）；CLI 与登录态全部在项目内（`.tools/dreamina-canvas`、`data/jimeng/`），**零宿主污染**；报价/积分闸门（creditCap / 人工确认卡片）与断点续跑（复用 submitId，不重复提交）
+- **完整设计文档**：`docs/superpowers/specs/` 下共 8 份已确认 spec —— `2026-08-04-hf-studio-design.md`（主设计）、`2026-08-05-channels-ui-design.md`（模型渠道页）、`2026-08-05-newjob-wizard-cjk-font-design.md`（新建任务向导 + CJK 字体）、`2026-08-05-timing-themes-quality-design.md`（节奏/主题/质量）、`2026-08-05-vd-manager-design.md`（vd 管理工具）、`2026-08-12-concurrency-design.md`（固定并发 worker 池）、`2026-08-12-subtitles-design.md`（硬字幕烧录）、`2026-09-29-jimeng-canvas-direct-video-design.md`（即梦画布 CLI AI 直出，含 Phase 0 命令面实测附录）；实施计划见 `docs/superpowers/plans/`
 
 ### 7 步流水线（`server/src/pipeline/steps/`）
 
@@ -113,19 +114,23 @@
 │   │   ├── 2026-08-05-timing-themes-quality-design.md
 │   │   ├── 2026-08-05-vd-manager-design.md
 │   │   ├── 2026-08-12-concurrency-design.md
-│   │   └── 2026-08-12-subtitles-design.md
+│   │   ├── 2026-08-12-subtitles-design.md
+│   │   └── 2026-09-29-jimeng-canvas-direct-video-design.md
 │   └── plans/                        #   实施计划（子代理执行用）
 │       ├── 2026-08-04-hf-studio.md
 │       ├── 2026-08-05-newjob-wizard-cjk-font.md
 │       ├── 2026-08-05-timing-themes-quality.md
 │       ├── 2026-08-12-concurrency.md
-│       └── 2026-08-12-subtitles.md
+│       ├── 2026-08-12-subtitles.md
+│       ├── 2026-09-29-jimeng-phase1.md
+│       └── 2026-09-29-jimeng-phase2.md
 └── hf-studio/                        # 应用子项目（HF-Studio 本体）
     ├── vd.ts                        # 管理工具（vd：启动/停止/更新/依赖检测，可 ln -s 到 /usr/local/bin/vd）
     ├── README.md                    # 完整架构说明 + 快速开始
     ├── bunfig.toml                  # bun 用官方 registry（绕过腾讯镜像 404）
     ├── package.json                 # 根脚本：dev:server / dev:web / test / e2e / test:vd
     ├── docs/environment.md          # 环境记录（bun/ffmpeg/Chrome 版本等）
+    ├── .tools/                      # 即梦画布 CLI（dreamina-canvas，项目内安装；gitignored）
     ├── .tmp/                        # 运行状态与日志（gitignored）：vd-state.json、logs/
     ├── server/                      # 后端（Hono + bun）
     │   ├── config.json              # 预设渠道配置（gitignored，无 key）
@@ -140,15 +145,16 @@
     │   │   ├── db/store.ts          # SQLite JobStore（jobs / step_runs）
     │   │   ├── llm/                 # gateway.ts（LlmGateway，多 provider + 重试退避）/ errors.ts
     │   │   ├── judge/               # LLM-as-Judge 评分器
-    │   │   ├── pipeline/            # engine.ts 状态机 + steps/step0-6 + beat-timing + root-html
+    │   │   ├── jimeng/              # 即梦画布 CLI 适配（cli/errors/service：登录、报价、生成、幂等状态机）
+    │   │   ├── pipeline/            # engine.ts 状态机 + steps/step0-6（jimeng 分支）+ beat-timing + root-html
     │   │   ├── prompts/             # 提示词模板（parse/design/storyboard/build-beat/fix-beat/judge-rubric）
     │   │   ├── render/              # service.ts（hyperframes CLI 封装：lint/check/snapshot/render）+ resolutions.ts
     │   │   ├── tts/                 # Edge-TTS 服务
     │   │   ├── subtitle/            # ass.ts（ASS 字幕纯函数生成）+ burn.ts（ffmpeg 烧录）
-    │   │   └── util/                # ffprobe / clean-output
+    │   │   └── util/                # ffprobe / clean-output / assemble（分镜归一化拼接）
     │   ├── test/                    # bun:test（每 step 独立测试 + api/engine/judge/gateway/store/tts/subtitle/
-    │   │                            #   channels/smoke/beat-timing/root-html/render 等 + engine-concurrency
-    │   │                            #   + fixtures/mock-transport.ts + e2e.config.sample.json）
+    │   │                            #   channels/smoke/jimeng.cli/jimeng.service/jimeng.steps/engine-jimeng 等
+    │   │                            #   + engine-concurrency + fixtures/mock-transport.ts + e2e.config.sample.json）
     │   ├── scripts/e2e-smoke.ts     # 真实 E2E 冒烟
     │   └── bun.lock
     ├── web/                         # React 前端（中文界面）
@@ -162,6 +168,7 @@
     ├── data/                        # 运行时数据（gitignored，新环境自动重建）
     │   ├── jobs.db                  # SQLite
     │   ├── channels.json            # 用户渠道 key（明文，gitignored）
+    │   ├── jimeng/                  # 即梦 CLI 登录态/tasks 记录/试生成（HOME/XDG 隔离在项目内）
     │   └── projects/<jobId>/        # 每任务完整产物（即标准 HyperFrames 项目，可用官方 CLI 继续编辑）：
     │                                #   brief.json DESIGN.md STORYBOARD.md SCRIPT.md transcript.json check.json
     │                                #   meta.json hyperframes.json package.json index.html
@@ -189,6 +196,7 @@
 - **并发**：engine 固定并发 worker 池，默认 2（`HF_STUDIO_CONCURRENCY` 环境变量可调，钳制 ≥1）；FIFO 出队
 - **配置**：`server/config.json`（预设渠道，无 key，gitignored）+ `data/channels.json`（用户 key）→ 引擎合并；改配置以 `config.example.json` 为模板；旧版 `providers` 结构启动时自动迁移
 - **密钥**：API key 明文存 SQLite / channels.json，学习测试环境可接受，交付时提示用户
+- **即梦直出（jimeng 模式）**：CLI 在 `hf-studio/.tools/dreamina-canvas`（`HF_JIMENG_BIN` 可覆盖，gitignored）；登录态与任务记录在 `hf-studio/data/jimeng/`（HOME/XDG 隔离在项目内，**零宿主**）；账号登录/状态见网页「设置 → 即梦账号」或 `GET /api/jimeng/status`；`config.jimeng.creditCap` 为**单片段**积分上限，服务端要求确认且超上限时任务暂停、详情页出「批准并继续」卡片（`POST /api/jobs/:id/credit-approve`）；重跑复用已保存 submitId，绝不重复提交
 - **数据**：`data/projects/<jobId>/` 是真实产物，**非确认不删**；`data/`、`.tmp/`、`node_modules/` 均 gitignored
 
 ### 架构与编码约定

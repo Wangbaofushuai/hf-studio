@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+AGENTS.md
 
 # Python
 .venv/
@@ -25,3 +26,5 @@ hf-studio/server/config.json
 
 # git worktree（隔离开发工作区）
 .worktrees/
+
+
