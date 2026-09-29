@@ -6,13 +6,17 @@ export default function ArtifactPanel({ jobId, steps }: { jobId: string; steps: 
   const artifacts = steps.flatMap((s) => s.artifacts.map((a) => ({ a, step: s.step })));
   const md = artifacts.filter(({ a }) => a.endsWith(".md"));
   const imgs = artifacts.filter(({ a }) => EXT_PREVIEW[a.split(".").pop() ?? ""] === "image");
-  const video = artifacts.find(({ a }) => a.endsWith(".mp4"));
+  // 成片优先取 renders/output.mp4；jimeng 模式下 step4/5 的片段产物会排在前面，
+  // 直接取"第一个 mp4"会误把首段片段（约 5-6s）当 30s 成片展示（2026-09-29 实测）
+  const finalVideo = artifacts.find(({ a }) => a === "renders/output.mp4");
+  const clipVideo = artifacts.find(({ a }) => a.endsWith(".mp4") && a !== "renders/output.mp4");
+  const video = finalVideo ?? clipVideo;
   const audio = artifacts.find(({ a }) => a.endsWith(".wav") || a.endsWith(".mp3"));
   return (
     <div className="space-y-4">
       {video && (
         <div>
-          <h3 className="text-sm font-semibold mb-1">成片</h3>
+          <h3 className="text-sm font-semibold mb-1">{finalVideo ? "成片" : "片段预览（尚未拼接成片）"}</h3>
           <video src={`/api/jobs/${jobId}/files/${video.a}`} controls className="w-full max-h-96 rounded-md bg-black" />
         </div>
       )}

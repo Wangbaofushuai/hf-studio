@@ -40,3 +40,23 @@ export function subscribeJob(id: string, onEvent: (e: unknown) => void): () => v
 
 export const deleteJob = (id: string) => j<{ ok: boolean }>(fetch(`/api/jobs/${id}`, { method: "DELETE" }));
 export const fetchBeats = (id: string) => j<{ beats: { index: number; file: string; size: number; mtime: string; desc: string }[] }>(fetch(`/api/jobs/${id}/beats`));
+
+// ── 即梦直出 ──
+export interface JimengStatusDto {
+  installed: boolean;
+  bin?: string;
+  version?: string | null;
+  loggedIn?: boolean;
+  account?: { userId?: number | string; isVip?: boolean; vipLevel?: string } | null;
+  error?: string;
+}
+export const jimengStatus = () => j<JimengStatusDto>(fetch("/api/jimeng/status"));
+export const jimengLogin = () =>
+  j<{ ok: boolean; alreadyLoggedIn?: boolean; challenge?: { deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete: string; expiresAt?: string } }>(
+    fetch("/api/jimeng/login", { method: "POST" }),
+  );
+export const jimengLogout = () => j<{ ok: boolean }>(fetch("/api/jimeng/logout", { method: "POST" }));
+export const approveJobCredits = (id: string, ceiling: number) =>
+  j<{ ok: boolean; creditCap: number }>(
+    fetch(`/api/jobs/${id}/credit-approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ceiling }) }),
+  );

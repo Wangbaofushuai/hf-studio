@@ -4,6 +4,14 @@ import { z } from "zod";
 import { readFileSync } from "node:fs";
 import type { StepContext, StepFn, StepResult, Brief } from "../../types";
 
+
+/** 思考深度（由向导「思考深度/生成速度」映射）：fast=关思考，balanced=中等，high=高强度 */
+function thinkingOpts(q: "fast" | "balanced" | "high" | undefined): { thinking: "enabled" | "disabled"; reasoningEffort: "low" | "medium" | "high" } {
+  if (q === "balanced") return { thinking: "enabled", reasoningEffort: "medium" };
+  if (q === "high") return { thinking: "enabled", reasoningEffort: "high" };
+  return { thinking: "disabled", reasoningEffort: "low" };
+}
+
 export const BriefSchema = z.object({
   title: z.string().min(1).max(40),
   summary: z.string().min(1),
@@ -18,6 +26,7 @@ export const BriefSchema = z.object({
 const SYSTEM = readFileSync(new URL("../../prompts/parse.txt", import.meta.url), "utf8");
 
 export const step0Parse: StepFn = async (ctx: StepContext): Promise<StepResult> => {
+
   const model = (ctx as unknown as { _model?: string })._model ?? ctx.config.models.default;
   try {
     const { data, raw } = await ctx.llm.chatJson(
@@ -41,6 +50,7 @@ export const step0Parse: StepFn = async (ctx: StepContext): Promise<StepResult> 
         // brief 是短文本输出，120s 足够；挂起渠道（失效 baseURL）必须在有限时间内失败，
         // 而不是默认 600s 无限等待让任务卡在 running
         timeoutMs: 120_000,
+        ...thinkingOpts(ctx.config.quality),
       },
       BriefSchema,
     );

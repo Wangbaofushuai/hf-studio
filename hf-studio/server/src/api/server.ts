@@ -8,6 +8,7 @@ import type { TtsService } from "../tts/service";
 import type { StepId, JobConfig, LlmProvider } from "../types";
 import { LlmGateway } from "../llm/gateway";
 import { buildProviders, channelCatalog, deleteChannelKey, fetchChannelModels, loadChannelKeys, saveChannelKey, type ChannelKeys } from "../channels";
+import { JimengCli } from "../jimeng/cli";
 
 const ALLOWED_IMAGE = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 const ALLOWED_AUDIO = ["audio/mpeg", "audio/wav", "audio/mp4", "audio/x-wav"];
@@ -41,9 +42,12 @@ function parseProviders(raw: string): LlmProvider[] {
 export function createServer(opts: {
   store: JobStore; engine: PipelineEngine; config: AppConfig; projectsRoot: string; tts: TtsService;
   channels?: ChannelsStore;
+  /** 即梦 CLI 适配器（测试可注入；缺省真实二进制） */
+  jimengCli?: JimengCli;
 }): { fetch: (req: Request) => Promise<Response> } {
   const app = new Hono();
   const chStore = opts.channels ?? defaultChannelsStore;
+  const jimengCli = opts.jimengCli ?? new JimengCli();
 
   app.post("/api/jobs", async (c) => {
     const form = await c.req.formData();
@@ -53,7 +57,24 @@ export function createServer(opts: {
     const voiceover = String(form.get("voiceover")) === "true";
     const voice = String(form.get("voice") ?? opts.config.tts.defaultVoice);
     const language = String(form.get("language") ?? opts.config.tts.defaultLanguage);
-    const model = String(form.get("model") ?? "").trim() || opts.config.defaults.model;
+    // 制作方式：hyperframes（默认，代码渲染）/ jimeng（即梦 AI 直出）
+    const modeRaw = String(form.get("mode") ?? "hyperframes");
+    if (modeRaw !== "hyperframes" && modeRaw !== "jimeng") return c.json({ error: "mode 不合法" }, 400);
+    const mode = modeRaw as JobConfig["mode"];
+    // 即梦直出不依赖 LLM 渠道：允许 model 为空；积分上限（可选，>0 才生效）
+    const model = String(form.get("model") ?? "").trim() || (mode === "jimeng" ? "" : opts.config.defaults.model);
+    const creditCapRaw = Number(form.get("jimengCreditCap") ?? NaN);
+    const creditCap = Number.isFinite(creditCapRaw) && creditCapRaw > 0 ? Math.round(creditCapRaw) : undefined;
+    // 即梦模型/分辨率（可选；缺省由服务端默认：样片版 480p）
+    const jimengModelRaw = String(form.get("jimengModel") ?? "").trim();
+    const jimengResolutionRaw = String(form.get("jimengResolution") ?? "").trim();
+    const jimengCfg: JobConfig["jimeng"] | undefined = mode === "jimeng"
+      ? {
+          ...(creditCap ? { creditCap } : {}),
+          ...(jimengModelRaw ? { model: jimengModelRaw } : {}),
+          ...(jimengResolutionRaw ? { resolution: jimengResolutionRaw } : {}),
+        }
+      : undefined;
     // 前端 BYOK 自定义渠道（可选）：JSON 数组 [{id, baseURL, apiKey, models[]}]
     const providers = parseProviders(String(form.get("providers") ?? ""));
     // 主题预设（可选）：{ id, hue: { primary, accent } }，JSON 字符串传入，非法返回 400
@@ -78,7 +99,7 @@ export function createServer(opts: {
     const subtitles = String(form.get("subtitles") ?? "true") !== "false";
 
     if (!idea.trim()) return c.json({ error: "idea 不能为空" }, 400);
-    if (!model) return c.json({ error: "请选择模型渠道（模型未配置）" }, 400);
+    if (mode === "hyperframes" && !model) return c.json({ error: "请选择模型渠道（模型未配置）" }, 400);
     // Number("abc") = NaN 会同时骗过 < 5 与 > 120 两个比较，必须显式拒绝非有限数
     if (!Number.isFinite(durationSec) || durationSec < 5 || durationSec > 120) {
       return c.json({ error: "durationSec 需在 5-120 之间" }, 400);
@@ -95,6 +116,7 @@ export function createServer(opts: {
       subtitles,
       ...(providers.length > 0 ? { providers } : {}),
       ...(theme ? { theme } : {}),
+      ...(mode === "jimeng" ? { mode, ...(jimengCfg ? { jimeng: jimengCfg } : {}) } : {}),
     });
 
     const assetDir = join(opts.projectsRoot, jobId, "assets");
@@ -111,7 +133,7 @@ export function createServer(opts: {
       if (isImg) images.push(safe);
       else audio = safe;
     }
-    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, quality, renderQuality, subtitles, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}) } });
+    opts.store.updateJob(jobId, { config: { idea, durationSec, format, voiceover, voice, language, models: { default: model }, materials: { images, audio }, quality, renderQuality, subtitles, ...(providers.length > 0 ? { providers } : {}), ...(theme ? { theme } : {}), ...(mode === "jimeng" ? { mode, ...(jimengCfg ? { jimeng: jimengCfg } : {}) } : {}) } });
     opts.engine.enqueue(jobId);
     return c.json({ id: jobId }, 201);
   });
@@ -163,14 +185,76 @@ export function createServer(opts: {
     if (!job) return c.json({ error: "not found" }, 404);
     // 排队/运行中重跑会与在途 runJob 并发写 step_runs（已删的行不会再跑，最终 completed 且 step 缺失）
     if (job.status === "queued" || job.status === "running") return c.json({ error: "任务正在运行中，请稍后重试" }, 409);
-    const body = (await c.req.json().catch(() => ({}))) as { step?: number; model?: string };
+    const body = (await c.req.json().catch(() => ({}))) as { step?: number; model?: string; jimengModel?: string; jimengResolution?: string };
     const step = body.step as StepId | undefined;
     if (step === undefined || step < 0 || step > 6) return c.json({ error: "step 需在 0-6" }, 400);
     if (body.model) {
       opts.store.updateJob(job.id, { config: { ...job.config, models: { ...job.config.models, default: body.model } } });
     }
+    // 即梦直出：重跑时可切换模型/分辨率（画质档位）；请求指纹变化会自动重生成视频
+    const jmModel = typeof body.jimengModel === "string" ? body.jimengModel.trim() : "";
+    const jmRes = typeof body.jimengResolution === "string" ? body.jimengResolution.trim() : "";
+    if (jmModel || jmRes) {
+      if (job.config.mode !== "jimeng") return c.json({ error: "仅即梦直出任务支持 jimengModel/jimengResolution" }, 400);
+      opts.store.updateJob(job.id, {
+        config: {
+          ...job.config,
+          jimeng: { ...(job.config.jimeng ?? {}), ...(jmModel ? { model: jmModel } : {}), ...(jmRes ? { resolution: jmRes } : {}) },
+        },
+      });
+    }
     opts.engine.rerunFrom(job.id, step); // engine 内部会先 store.rerunFrom 再入队
     return c.json({ ok: true }, 202);
+  });
+
+  // —— 即梦账号（画布 CLI）——
+  app.get("/api/jimeng/status", async (c) => {
+    const version = await jimengCli.call<{ version?: string }>(["version"], { timeoutMs: 30_000 });
+    if (!version.ok && !version.data) {
+      return c.json({ installed: false, bin: jimengCli.bin, error: version.error?.message ?? `exit ${version.code}` });
+    }
+    const auth = await jimengCli.call<{ loggedIn?: boolean; profile?: string }>(["auth", "status"], { timeoutMs: 30_000 });
+    const loggedIn = auth.data?.loggedIn === true;
+    let account: unknown = null;
+    if (loggedIn) {
+      const acc = await jimengCli.call<Record<string, unknown>>(["auth", "account"], { timeoutMs: 30_000 });
+      if (acc.ok) account = acc.data ?? null;
+    }
+    return c.json({ installed: true, bin: jimengCli.bin, version: version.data?.version ?? null, loggedIn, account });
+  });
+
+  app.post("/api/jimeng/login", async (c) => {
+    const r = await jimengCli.call<{
+      status?: string;
+      challenge?: { deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete: string; expiresAt?: string };
+    }>(["auth", "login"], { timeoutMs: 60_000 });
+    if (!r.ok) return c.json({ error: r.error?.message ?? `即梦登录发起失败（exit ${r.code}）` }, 502);
+    if (r.data?.status === "logged_in" || !r.data?.challenge) return c.json({ ok: true, alreadyLoggedIn: true });
+    const ch = r.data.challenge;
+    // 后台等待授权完成；前端轮询 /api/jimeng/status 即可（不阻塞本请求）
+    void jimengCli.call(["auth", "wait", "--device-code", ch.deviceCode, "--timeout", "10m"], { timeoutMs: 11 * 60 * 1000 }).catch(() => {});
+    return c.json({ ok: true, challenge: ch });
+  });
+
+  app.post("/api/jimeng/logout", async (c) => {
+    const r = await jimengCli.call(["auth", "logout"], { timeoutMs: 30_000 });
+    if (!r.ok) return c.json({ error: r.error?.message ?? `退出失败（exit ${r.code}）` }, 502);
+    return c.json({ ok: true });
+  });
+
+  // 积分批准：写回 creditCap 并从 step4 续跑（报价确认卡片的动作；复用已保存 nodeId，不重复建节点）
+  app.post("/api/jobs/:id/credit-approve", async (c) => {
+    const job = opts.store.getJob(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    if (job.config.mode !== "jimeng") return c.json({ error: "仅即梦直出任务支持积分批准" }, 400);
+    if (job.status === "queued" || job.status === "running") return c.json({ error: "任务正在运行中，请稍后重试" }, 409);
+    const body = (await c.req.json().catch(() => ({}))) as { ceiling?: number };
+    const ceiling = Number(body.ceiling);
+    if (!Number.isFinite(ceiling) || ceiling <= 0) return c.json({ error: "ceiling 需为正数" }, 400);
+    const cap = Math.max(job.config.jimeng?.creditCap ?? 0, Math.ceil(ceiling));
+    opts.store.updateJob(job.id, { config: { ...job.config, jimeng: { ...(job.config.jimeng ?? {}), creditCap: cap } } });
+    opts.engine.rerunFrom(job.id, 4);
+    return c.json({ ok: true, creditCap: cap }, 202);
   });
 
   app.get("/api/jobs/:id/events", (c) => {
@@ -211,7 +295,39 @@ export function createServer(opts: {
     if (rel.startsWith("..") || isAbsolute(rel) || !statSync(target, { throwIfNoEntry: false })?.isFile()) {
       return c.json({ error: "not found" }, 404);
     }
-    return new Response(Bun.file(target));
+    const file = Bun.file(target);
+    const size = file.size;
+    // 视频播放器依赖 Range 请求（拖进度条/分段预取）；无 Range 时按整文件返回
+    const range = c.req.header("range");
+    if (range && size > 0) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (m && (m[1] || m[2])) {
+        let start: number;
+        let end: number;
+        if (!m[1]) {
+          const suffix = Number(m[2]);
+          start = Math.max(0, size - suffix);
+          end = size - 1;
+        } else {
+          start = Number(m[1]);
+          end = m[2] ? Number(m[2]) : size - 1;
+        }
+        if (Number.isFinite(start) && Number.isFinite(end) && start <= end && start < size) {
+          end = Math.min(end, size - 1);
+          return new Response(file.slice(start, end + 1), {
+            status: 206,
+            headers: {
+              "Content-Range": `bytes ${start}-${end}/${size}`,
+              "Accept-Ranges": "bytes",
+              "Content-Length": String(end - start + 1),
+            },
+          });
+        }
+      }
+    }
+    return new Response(file, {
+      headers: { "Accept-Ranges": "bytes", "Content-Length": String(size) },
+    });
   });
 
   app.get("/api/models", (c) => {

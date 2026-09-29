@@ -4,9 +4,11 @@ import type { Judge } from "./judge/judge";
 import type { JobStore } from "./db/store";
 import type { RenderService } from "./render/service";
 import type { TtsService } from "./tts/service";
+import type { JimengService } from "./jimeng/service";
 
 export type StepId = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type JobStatus = "queued" | "running" | "failed" | "needs_review" | "completed";
+export type JobMode = "hyperframes" | "jimeng";   // 制作方式：代码渲染（默认） / 即梦 AI 直出
 
 export interface LlmProvider {
   id: string;                                     // 渠道名，如 "deepseek"、"mykey"
@@ -34,6 +36,14 @@ export interface JobConfig {
   renderQuality?: "standard" | "high";           // 渲染清晰度档位（hyperframes render --quality）；默认 standard
   quality?: "fast" | "balanced" | "high";        // 生成快慢档：step4/5 思考强度 low/medium/high；默认 fast
   subtitles?: boolean;                             // 旁白字幕烧录（默认开启；voiceover=false 时跳过）
+  mode?: JobMode;                                  // 制作方式；缺省 hyperframes（兼容老任务）
+  jimeng?: {                                       // mode=jimeng 时生效
+    model?: string;                                // `model list --type video` 的 canonical model；缺省 seedance_2.5_draft
+    resolution?: string;                           // 缺省随模型（draft=480p）
+    anchorModel?: string;                          // 定妆图（锚点）图片模型；缺省 high_aes_general_v50_flash
+    creditCap?: number;                            // 单任务积分上限：报价 ≤ 上限才自动运行
+    clipMaxSec?: number;                           // 单片段时长上限（Phase 2 分镜用）
+  };
 }
 
 export interface Brief {
@@ -59,6 +69,9 @@ export interface Beat {
   durationSec: number;                            // 估算（无配音）或来自 transcript（有配音，step4 填充）
   startSec?: number;                              // step4 填充
   endSec?: number;
+  // jimeng 直出（Phase 2.1 连贯性）：镜头类型与画面动作；hyperframes 模式不使用
+  shotType?: "establishing" | "closeup" | "over_shoulder" | "gesture" | "insert" | string;
+  visualAction?: string;
 }
 
 export interface JudgeResult { score: number; rubric: Record<string, number>; feedback: string; }
@@ -92,6 +105,7 @@ export interface StepContext {
   store: JobStore;
   render: RenderService;
   tts: TtsService;
+  jimeng?: JimengService;                         // mode=jimeng 时由引擎注入
   feedback: string | null;                        // 引擎在重试前注入的上次失败反馈
   log: (msg: string) => void;
 }

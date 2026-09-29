@@ -21,7 +21,16 @@ function themeConstraint(t?: { id: string; hue?: { primary?: string; accent?: st
   return `主题：${t.id}${kw ? `, ${kw}` : ""} 主色:${t.hue?.primary ?? "未指定"} 强调色:${t.hue?.accent ?? "未指定"}，主色与强调色必须采用给定值（除非与画幅/可读性冲突），其余色板按主题推导；未指定则自由发挥。`;
 }
 
+
+/** 思考深度（由向导「思考深度/生成速度」映射）：fast=关思考，balanced=中等，high=高强度 */
+function thinkingOpts(q: "fast" | "balanced" | "high" | undefined): { thinking: "enabled" | "disabled"; reasoningEffort: "low" | "medium" | "high" } {
+  if (q === "balanced") return { thinking: "enabled", reasoningEffort: "medium" };
+  if (q === "high") return { thinking: "enabled", reasoningEffort: "high" };
+  return { thinking: "disabled", reasoningEffort: "low" };
+}
+
 export const step1Design: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
+
   const model = (ctx as unknown as { _model?: string })._model ?? ctx.config.models.default;
   const brief = (prev[0]?.data.brief ?? JSON.parse(readFileSync(join(ctx.projectDir, "brief.json"), "utf8"))) as Brief;
   const themeNote = themeConstraint(ctx.config.theme);
@@ -39,6 +48,7 @@ export const step1Design: StepFn = async (ctx: StepContext, prev): Promise<StepR
     seed: 22,
     // DESIGN.md 是文本输出，120s 足够；挂起渠道必须在有限时间内失败而不是无限等待
     timeoutMs: 120_000,
+    ...thinkingOpts(ctx.config.quality),
   });
   const design = content.trim();
   writeFileSync(join(ctx.projectDir, "DESIGN.md"), design);

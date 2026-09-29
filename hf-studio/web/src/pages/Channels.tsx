@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { deleteChannel, fetchChannels, fetchChannelModels, saveChannel, testChannel } from "../api";
 import type { ChannelDto, ChannelsDto } from "../types";
+import JimengAccountCard from "../components/JimengAccountCard";
 
 const BRAND: Record<string, { initial: string; hue: string }> = {
   deepseek: { initial: "D", hue: "from-sky-400 to-blue-600" },
@@ -216,6 +217,8 @@ export default function Channels() {
         <h2 className="text-2xl font-semibold tracking-tight">设置</h2>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">渠道配置：填入 Key 后点「获取模型」拉取该渠道全部模型，勾选需要的保存；Key 只存服务器、不回显。</p>
       </header>
+
+      <JimengAccountCard />
 
       <section>
         <h3 className="mb-3 text-sm font-semibold text-neutral-600 dark:text-neutral-300">渠道配置</h3>

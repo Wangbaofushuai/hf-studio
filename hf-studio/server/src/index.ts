@@ -8,6 +8,8 @@ import { LlmGateway } from "./llm/gateway";
 import { Judge } from "./judge/judge";
 import { RenderService } from "./render/service";
 import { TtsService } from "./tts/service";
+import { JimengCli } from "./jimeng/cli";
+import { JimengService } from "./jimeng/service";
 import { PipelineEngine } from "./pipeline/engine";
 import { steps } from "./pipeline/steps";
 import { createServer } from "./api/server";
@@ -30,6 +32,7 @@ export function mergedProviders(config: AppConfig) {
 
 export function buildEngine(store: JobStore = createStore(), config: AppConfig = loadConfig()): PipelineEngine {
   const providers = mergedProviders(config);
+  const jimengCli = new JimengCli();
   const services = {
     llm: new LlmGateway(providers),
     judge: new Judge(new LlmGateway(providers), config.defaults.judgeModel, config.defaults.judgeThreshold),
@@ -37,6 +40,7 @@ export function buildEngine(store: JobStore = createStore(), config: AppConfig =
     baseProviders: providers,
     render: (projectDir: string) => new RenderService(projectDir),
     tts: new TtsService(),
+    jimeng: (projectDir: string) => new JimengService(jimengCli, { projectDir }),
   };
   // 并发上限：HF_STUDIO_CONCURRENCY（默认 2，钳制 ≥1）；4 核 7.8G 下 2 个渲染并行是安全值
   const maxConcurrency = Math.max(1, Math.floor(Number(process.env.HF_STUDIO_CONCURRENCY ?? 2) || 2));

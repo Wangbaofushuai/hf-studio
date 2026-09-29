@@ -22,6 +22,14 @@ const THEMES = [
 
 const DURATIONS = [15, 30, 60, 90];
 
+// 即梦视频模型（短名单；与 CLI `model list --type video` 对齐，缺省样片版省钱档）
+const JIMENG_MODELS = [
+  { id: "seedance_2.5_draft", label: "样片版 480p（省钱）", resolutions: ["480p"] },
+  { id: "seedance_2.0_mini", label: "2.0 mini 720p", resolutions: ["720p"] },
+  { id: "seedance_2.0_vip", label: "2.0 VIP 720p / 1080p", resolutions: ["720p", "1080p"] },
+  { id: "seedance_2.5", label: "2.5 480p / 720p / 1080p", resolutions: ["480p", "720p", "1080p"] },
+] as const;
+
 const STEPS = ["内容设置", "模型", "素材与确认"];
 
 export default function NewJob() {
@@ -53,6 +61,12 @@ export default function NewJob() {
   // 3 步向导
   const [step, setStep] = useState(0);
   const [maxReached, setMaxReached] = useState(0);
+  // 制作方式：hyperframes（代码渲染，默认）/ jimeng（即梦 AI 直出，Phase 1 实验）
+  const [mode, setMode] = useState<"hyperframes" | "jimeng">("hyperframes");
+  const [jimengCreditCap, setJimengCreditCap] = useState("");
+  const [jimengModel, setJimengModel] = useState<string>("seedance_2.5_draft");
+  const [jimengResolution, setJimengResolution] = useState<string>("480p");
+  const hf = mode === "hyperframes";
 
   useEffect(() => {
     fetchChannels().then(setCat).catch(() => setCat({ presets: [], custom: [] }));
@@ -113,6 +127,12 @@ export default function NewJob() {
     form.set("idea", idea);
     form.set("durationSec", String(durationSec));
     form.set("format", format);
+    form.set("mode", mode);
+    if (!hf) {
+      if (jimengCreditCap.trim()) form.set("jimengCreditCap", jimengCreditCap.trim());
+      form.set("jimengModel", jimengModel);
+      form.set("jimengResolution", jimengResolution);
+    }
     form.set("voiceover", String(voiceover));
     form.set("voice", voice);
     form.set("language", language);
@@ -160,6 +180,50 @@ export default function NewJob() {
 
       {step === 0 && (
         <section className="glass space-y-3 p-6">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">制作方式</label>
+            <div className="segmented">
+              <button type="button" data-active={mode === "hyperframes"} onClick={() => setMode("hyperframes")}>代码渲染</button>
+              <button type="button" data-active={mode === "jimeng"} onClick={() => setMode("jimeng")}>AI 直出（实验）</button>
+            </div>
+            {mode === "jimeng" && (
+              <p className="mt-2 text-[11px] leading-5 text-neutral-400">
+                AI 直出（即梦）：目标时长 ≤ 模型单次上限时一条直出（连续长镜头），超出才拆片段拼接；表演型内容由即梦原生配音（人物开口说台词、口型同步），讲解型内容用 Edge-TTS 旁白；字幕独立控制。生成会消耗即梦积分，账号在「设置 → 即梦账号」。
+              </p>
+            )}
+          </div>
+          {mode === "jimeng" && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">积分上限（可选）</label>
+              <input type="number" min={1} value={jimengCreditCap} onChange={(e) => setJimengCreditCap(e.target.value)} placeholder="例如 60；服务端要求确认且报价 ≤ 上限时自动继续"
+                className="input" />
+            </div>
+          )}
+          {mode === "jimeng" && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">即梦模型</label>
+                <select
+                  className="input"
+                  value={jimengModel}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    setJimengModel(m);
+                    const rs = JIMENG_MODELS.find((x) => x.id === m)?.resolutions ?? ["480p"];
+                    if (!(rs as readonly string[]).includes(jimengResolution)) setJimengResolution(rs[0]);
+                  }}
+                >
+                  {JIMENG_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">分辨率</label>
+                <select className="input" value={jimengResolution} onChange={(e) => setJimengResolution(e.target.value)}>
+                  {(JIMENG_MODELS.find((x) => x.id === jimengModel)?.resolutions ?? ["480p"]).map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200">你的想法</label>
           <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={4} required
             placeholder="例如：用三句话讲清楚太阳能发电的原理，风格偏科技感"
@@ -213,6 +277,7 @@ export default function NewJob() {
             )}
           </div>
 
+          {hf && (<>
           <div className="border-t border-black/10 pt-4 dark:border-white/10">
             <label className="mb-2 block text-sm font-medium text-neutral-700 dark:text-neutral-200">主题 / 预设模板</label>
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -256,14 +321,17 @@ export default function NewJob() {
               <button type="button" data-active={quality === "hd"} onClick={() => setQuality("hd")}>高清</button>
             </div>
           </div>
+          </>)}
           <div className="border-t border-black/10 pt-4 dark:border-white/10">
-            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">生成速度</label>
+            <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-200">{hf ? "生成速度" : "思考深度（LLM 分镜/设计）"}</label>
             <div className="segmented">
-              <button type="button" data-active={buildQuality === "fast"} onClick={() => setBuildQuality("fast")}>快速</button>
-              <button type="button" data-active={buildQuality === "balanced"} onClick={() => setBuildQuality("balanced")}>均衡</button>
-              <button type="button" data-active={buildQuality === "high"} onClick={() => setBuildQuality("high")}>高质量</button>
+              <button type="button" data-active={buildQuality === "fast"} onClick={() => setBuildQuality("fast")}>{hf ? "快速" : "快（不思考）"}</button>
+              <button type="button" data-active={buildQuality === "balanced"} onClick={() => setBuildQuality("balanced")}>{hf ? "均衡" : "均衡（推理）"}</button>
+              <button type="button" data-active={buildQuality === "high"} onClick={() => setBuildQuality("high")}>{hf ? "高质量" : "深（高强度）"}</button>
             </div>
-            <p className="mt-1 text-[11px] text-neutral-400">快速约 1 分钟/片段（默认）；高质量更精致但慢 5-10 倍</p>
+            <p className="mt-1 text-[11px] text-neutral-400">
+              {hf ? "快速约 1 分钟/片段（默认）；高质量更精致但慢 5-10 倍" : "快=直接出结果最快；均衡/深会让 LLM 先推理再产出，更慢但分镜与文案质量更稳"}
+            </p>
           </div>
         </section>
       )}
@@ -316,6 +384,11 @@ export default function NewJob() {
               <input className="input" placeholder="模型列表，逗号分隔" value={tmpModels} onChange={(e) => setTmpModels(e.target.value)} />
             </div>
           </details>
+          {!hf && (
+            <p className="rounded-xl border border-dashed border-black/10 p-3 text-xs text-neutral-500 dark:border-white/10">
+              AI 直出模式用该渠道的 LLM 生成创意与分镜，即梦负责画面生成；请选择一个可用渠道。
+            </p>
+          )}
         </section>
       )}
 
@@ -327,6 +400,12 @@ export default function NewJob() {
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">想法</dt>
                 <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">{idea.length > 60 ? `${idea.slice(0, 60)}…` : idea}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 shrink-0 text-neutral-500">制作方式</dt>
+                <dd className="min-w-0 flex-1 text-neutral-700 dark:text-neutral-300">
+                  {hf ? "代码渲染（HyperFrames）" : `AI 直出（即梦）${jimengCreditCap.trim() ? ` · 积分上限 ${jimengCreditCap}` : ""}`}
+                </dd>
               </div>
               <div className="flex gap-3">
                 <dt className="w-16 shrink-0 text-neutral-500">时长 / 画幅</dt>

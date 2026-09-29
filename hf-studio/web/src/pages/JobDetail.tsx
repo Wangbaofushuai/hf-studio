@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getJob, rerunJob, subscribeJob, fetchBeats } from "../api";
+import { approveJobCredits, getJob, rerunJob, subscribeJob, fetchBeats } from "../api";
 import type { JobDetailDto } from "../types";
 import ProgressSteps from "../components/ProgressSteps";
 import ArtifactPanel from "../components/ArtifactPanel";
@@ -47,8 +47,17 @@ export default function JobDetail() {
     getJob(id).then(setDetail).catch(() => {});
   };
 
+  const onApproveCredits = async (ceiling?: number) => {
+    if (!ceiling || ceiling <= 0) return;
+    await approveJobCredits(id, ceiling);
+    setLogs((l) => [...l, `已批准 ${ceiling} 积分，从第 4 步继续（复用已保存节点，不重复计费）`]);
+    getJob(id).then(setDetail).catch(() => {});
+  };
+
   if (!detail) return <p className="text-sm text-neutral-500">加载中…</p>;
   const { job, steps } = detail;
+  const jmConfirmation = (steps.find((s) => s.step === 4)?.data as { jimengConfirmation?: { key?: string; minimumCreditCeiling?: number; totalQuote?: number } } | undefined)?.jimengConfirmation;
+  const jmPending = Boolean(jmConfirmation) && job.status !== "running" && job.status !== "queued" && job.status !== "completed";
   return (
     <div className="space-y-6">
       <header className="flex items-center justify-between gap-4">
@@ -59,6 +68,26 @@ export default function JobDetail() {
           </p>
         </div>
       </header>
+
+      {jmPending && jmConfirmation && (
+        <section className="space-y-2 rounded-2xl border border-amber-400/50 bg-amber-50/60 p-4 dark:border-amber-400/30 dark:bg-amber-400/10">
+          <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300">即梦需要积分确认</h3>
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">
+            片段 {jmConfirmation.key ?? "-"} 生成需要批准消费上限
+            {jmConfirmation.minimumCreditCeiling != null ? ` ${jmConfirmation.minimumCreditCeiling} 积分` : "（报价未知）"}
+            {typeof jmConfirmation.totalQuote === "number" && jmConfirmation.totalQuote > 0 ? `；当前已报价合计 ${jmConfirmation.totalQuote} 积分` : ""}。
+            批准后将复用已保存的节点与任务 ID 继续，不会重复提交或重复扣费。
+          </p>
+          <button
+            type="button"
+            className="btn-primary px-4 py-2"
+            disabled={jmConfirmation.minimumCreditCeiling == null}
+            onClick={() => void onApproveCredits(jmConfirmation.minimumCreditCeiling)}
+          >
+            批准{jmConfirmation.minimumCreditCeiling != null ? ` ${jmConfirmation.minimumCreditCeiling} 积分` : ""}并继续
+          </button>
+        </section>
+      )}
 
       <div className="glass p-4">
         <ProgressSteps steps={steps} currentStep={job.currentStep} />
@@ -97,7 +126,7 @@ export default function JobDetail() {
           </div>
           <div className="flex gap-2">
             <dt className="shrink-0 text-neutral-500">字幕</dt>
-            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{!job.config.voiceover || job.config.subtitles === false ? "关闭" : "开启"}</dd>
+            <dd className="min-w-0 text-neutral-700 dark:text-neutral-300">{job.config.subtitles !== false && (job.config.voiceover || job.config.mode === "jimeng") ? "开启" : "关闭"}</dd>
           </div>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
             <dt className="shrink-0 text-neutral-500">主题</dt>

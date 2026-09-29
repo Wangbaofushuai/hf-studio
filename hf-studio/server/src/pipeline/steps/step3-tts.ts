@@ -15,6 +15,7 @@ export { estimateSec };
 const REAL_GAP_SEC = 0;
 
 export const step3Tts: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
+
   const beats = (prev[2]?.data.storyboard as { beats: Beat[] } | undefined)?.beats ?? [];
   // probe 可注入（默认真实 ffprobe），测试时用固定值替代
   const probe: typeof probeMedia = (ctx as unknown as { _probeMedia?: typeof probeMedia })._probeMedia ?? probeMedia;

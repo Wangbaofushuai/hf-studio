@@ -3,6 +3,8 @@ import { isAbsolute, join } from "node:path";
 import type { StepContext, StepFn, StepResult } from "../../types";
 import { stripCodeFences, ensureCjkFontStack, stripClipAttrs, normalizeBeatAnimations, ensureRootWrapper } from "../../util/clean-output";
 import { RESOLUTIONS } from "../../render/resolutions";
+import { probeMedia } from "../../util/ffprobe";
+import { jimengClipRel, jimengDurationSec } from "./jimeng-video";
 
 const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.meta.url), "utf8");
 
@@ -11,6 +13,75 @@ const FIX_SYSTEM = readFileSync(new URL("../../prompts/fix-beat.txt", import.met
 interface CheckFinding { file?: string; sourceFile?: string; message?: string; rule?: string; code?: string }
 
 export const step5Validate: StepFn = async (ctx: StepContext, prev): Promise<StepResult> => {
+  // —— AI 直出（jimeng）分支 ——
+  if (ctx.config.mode === "jimeng") {
+    const jm = prev[4]?.data.jimeng as { items?: Record<string, { clipPath?: string }>; clipPath?: string } | undefined;
+    const timed = (prev[4]?.data.beats as { id?: string; index: number; startSec: number; endSec: number }[] | undefined) ?? [];
+
+    // Phase 2：逐片段校验（存在/视频流/至少可用；窗口不足部分由拼接阶段补帧）
+    if (jm?.items && Object.keys(jm.items).length > 0 && timed.length > 0) {
+      const errors: string[] = [];
+      const artifacts: string[] = [];
+      for (const t of timed) {
+        const rel = t.id ? jm.items[t.id]?.clipPath : undefined;
+        if (!rel) { errors.push(`${t.id ?? `beat-${t.index}`} 缺少片段记录`); continue; }
+        const abs = join(ctx.projectDir, rel);
+        if (!existsSync(abs)) { errors.push(`${rel} 不存在`); continue; }
+        const probe = await probeMedia(abs);
+        const windowSec = Math.max(1, t.endSec - t.startSec);
+        const floor = Math.min(windowSec, 4) * 0.9;
+        if (!probe.hasVideo || probe.durationSec < floor) {
+          errors.push(`${t.id ?? `beat-${t.index}`} 片段无效：hasVideo=${probe.hasVideo}, ${probe.durationSec.toFixed(1)}s < 下限 ${floor.toFixed(1)}s`);
+          continue;
+        }
+        artifacts.push(rel);
+      }
+      if (errors.length > 0) {
+        return { status: "gate_failed", artifacts, data: {}, log: `即梦片段校验失败（${errors.length} 项）`, gateErrors: errors };
+      }
+      return {
+        status: "passed",
+        artifacts: [...artifacts, "jimeng/state.json"],
+        data: { clips: artifacts.length },
+        log: `即梦片段校验通过：${artifacts.length} 个`,
+      };
+    }
+
+    // Phase 1 兼容：单条片段时长偏差 ≤30%
+    const rel = jimengClipRel(ctx.projectDir);
+    const abs = join(ctx.projectDir, rel);
+    if (!existsSync(abs)) {
+      return { status: "gate_failed", artifacts: [], data: {}, log: `即梦片段缺失：${rel}`, gateErrors: [`${rel} 不存在`] };
+    }
+    const probe = await probeMedia(abs);
+    if (!probe.hasVideo || probe.durationSec <= 0) {
+      return {
+        status: "gate_failed",
+        artifacts: [rel],
+        data: { durationSec: probe.durationSec, hasVideo: probe.hasVideo },
+        log: `即梦片段无效：hasVideo=${probe.hasVideo}, duration=${probe.durationSec.toFixed(1)}s`,
+        gateErrors: ["片段无有效视频流"],
+      };
+    }
+    const expected = jimengDurationSec(ctx.config);
+    const dev = Math.abs(probe.durationSec - expected) / expected;
+    if (dev > 0.3) {
+      return {
+        status: "gate_failed",
+        artifacts: [rel],
+        data: { durationSec: probe.durationSec },
+        log: `即梦片段时长偏差 ${(dev * 100).toFixed(0)}%`,
+        gateErrors: [`时长 ${probe.durationSec.toFixed(1)}s vs 预期 ${expected}s，偏差 ${(dev * 100).toFixed(0)}% > 30%`],
+      };
+    }
+    return {
+      status: "passed",
+      artifacts: [rel, "jimeng/state.json"],
+      data: { durationSec: probe.durationSec, hasVideo: true },
+      log: `即梦片段校验通过：${rel}（${probe.durationSec.toFixed(1)}s）`,
+    };
+  }
+
   // 引擎注入 `_model`（每步可覆盖）；直接调用（测试）时回退到 config 默认模型
   const model = (ctx as unknown as { _model?: string })._model ?? ctx.config.models.default;
   // prev 按 step 编号索引（step1~4 同约定）：step4 build 的 data.beats 含 startSec/endSec

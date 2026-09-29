@@ -6,7 +6,8 @@ import { LlmApiError } from "../llm/errors";
 import { Judge } from "../judge/judge";
 import type { RenderService } from "../render/service";
 import type { TtsService } from "../tts/service";
-import type { JobStatus, StepContext, StepFn, StepId, StepOutput, StepResult } from "../types";
+import type { JobStatus, JobConfig, StepContext, StepFn, StepId, StepOutput, StepResult } from "../types";
+import type { JimengService } from "../jimeng/service";
 
 export interface Services {
   llm: LlmGateway;
@@ -15,6 +16,8 @@ export interface Services {
   baseProviders?: LlmProvider[];
   render: (projectDir: string) => RenderService;
   tts: TtsService;
+  /** 即梦直出服务工厂（mode=jimeng 时使用）；未配置时为 undefined，jimeng 步骤会报“即梦服务未启用” */
+  jimeng?: (projectDir: string, config: JobConfig) => JimengService;
 }
 export type EngineEvent =
   | { type: "job_status"; jobId: string; status: JobStatus; currentStep: StepId | null; message: string }
@@ -169,14 +172,16 @@ export class PipelineEngine {
 
     for (;;) {
       attempts++;
+      const current = store.getJob(jobId)!;
       const ctx: StepContext = {
-        jobId, projectDir, config: store.getJob(jobId)!.config,
+        jobId, projectDir, config: current.config,
         llm, judge,
         store, render: this.opts.services.render(projectDir), tts: this.opts.services.tts,
+        jimeng: this.opts.services.jimeng?.(projectDir, current.config),
         feedback, log: () => {},
       };
       (ctx as StepContext & { _model: string })._model = model;
-      (ctx as StepContext & { _renderQuality: string })._renderQuality = store.getJob(jobId)!.config.renderQuality ?? "standard";
+      (ctx as StepContext & { _renderQuality: string })._renderQuality = current.config.renderQuality ?? "standard";
       try {
         const r: StepResult = await stepFn(ctx, prev);
         if (r.status === "passed") {

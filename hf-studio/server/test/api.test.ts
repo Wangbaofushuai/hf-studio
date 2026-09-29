@@ -143,11 +143,89 @@ describe("API", () => {
     expect(await res.json()).toMatchObject({ error: "renderQuality 不合法" });
   });
 
+  test("POST /api/jobs jimeng 模式：无需 model，写入 mode/creditCap", async () => {
+    const form = new FormData();
+    form.set("idea", "赛博城市夜景，镜头推进");
+    form.set("durationSec", "15");
+    form.set("format", "landscape");
+    form.set("mode", "jimeng");
+    form.set("jimengCreditCap", "60");
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    const job = store.getJob(id);
+    expect(job?.config.mode).toBe("jimeng");
+    expect(job?.config.jimeng?.creditCap).toBe(60);
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  test("POST /api/jobs 拒绝非法 mode", async () => {
+    const form = new FormData();
+    form.set("idea", "x");
+    form.set("mode", "bogus");
+    const res = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    expect(res.status).toBe(400);
+  });
+
+  test("POST /api/jobs/:id/credit-approve：写回 creditCap 并从 step4 续跑", async () => {
+    const form = new FormData();
+    form.set("idea", "积分批准用例");
+    form.set("durationSec", "15");
+    form.set("mode", "jimeng");
+    const created = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    const { id } = (await created.json()) as { id: string };
+    await new Promise((r) => setTimeout(r, 30));
+    const res = await server.fetch(new Request(`${base}/api/jobs/${id}/credit-approve`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ceiling: 120 }),
+    }));
+    expect(res.status).toBe(202);
+    expect(store.getJob(id)?.config.jimeng?.creditCap).toBe(120);
+    // 非 jimeng 任务拒绝
+    const form2 = new FormData();
+    form2.set("idea", "普通任务");
+    form2.set("durationSec", "15");
+    form2.set("model", "fake/model-a");
+    const created2 = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form2 }));
+    const { id: id2 } = (await created2.json()) as { id: string };
+    const res2 = await server.fetch(new Request(`${base}/api/jobs/${id2}/credit-approve`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ceiling: 10 }),
+    }));
+    expect(res2.status).toBe(400);
+  });
+
   test("GET /api/jobs lists jobs", async () => {
     const res = await server.fetch(new Request(`${base}/api/jobs`));
     const { jobs } = (await res.json()) as { jobs: unknown[] };
-    // 前面用例成功 POST 创建了 4 个 job（2 个基础 + 2 个 theme/renderQuality；2 个非法输入用例不建 job）
-    expect(jobs.length).toBe(4);
+    // 前面用例成功 POST 创建了 7 个 job（2 基础 + 2 theme/renderQuality + 1 jimeng + 2 积分批准用例；非法输入不建 job）
+    expect(jobs.length).toBe(7);
+  });
+
+  test("POST /api/jobs/:id/rerun 支持切换即梦模型/分辨率，且非 jimeng 任务拒绝", async () => {
+    const form = new FormData();
+    form.set("idea", "即梦切换档位用例");
+    form.set("durationSec", "15");
+    form.set("mode", "jimeng");
+    const created = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form }));
+    const { id } = (await created.json()) as { id: string };
+    await new Promise((r) => setTimeout(r, 30));
+    const res = await server.fetch(new Request(`${base}/api/jobs/${id}/rerun`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: 4, jimengModel: "seedance_2.5", jimengResolution: "720p" }),
+    }));
+    expect(res.status).toBe(202);
+    expect(store.getJob(id)?.config.jimeng).toMatchObject({ model: "seedance_2.5", resolution: "720p" });
+    // 非 jimeng 任务拒绝
+    const form2 = new FormData();
+    form2.set("idea", "普通任务档位");
+    form2.set("durationSec", "15");
+    form2.set("model", "fake/model-a");
+    const created2 = await server.fetch(new Request(`${base}/api/jobs`, { method: "POST", body: form2 }));
+    const { id: id2 } = (await created2.json()) as { id: string };
+    const res2 = await server.fetch(new Request(`${base}/api/jobs/${id2}/rerun`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: 4, jimengModel: "seedance_2.5" }),
+    }));
+    expect(res2.status).toBe(400);
   });
 
   test("GET /api/jobs/:id returns detail with steps", async () => {
@@ -357,7 +435,17 @@ describe("API", () => {
     writeFileSync(join(proj, "hello.txt"), "hello");
     const res = await server.fetch(new Request(`${base}/api/jobs/${id}/files/hello.txt`));
     expect(res.status).toBe(200);
+    expect(res.headers.get("accept-ranges")).toBe("bytes");
     expect(await res.text()).toBe("hello");
+    // Range 请求（视频播放器拖进度条依赖）：206 + Content-Range
+    const r = await server.fetch(new Request(`${base}/api/jobs/${id}/files/hello.txt`, { headers: { Range: "bytes=1-3" } }));
+    expect(r.status).toBe(206);
+    expect(r.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(await r.text()).toBe("ell");
+    // 后缀 Range（bytes=-2）
+    const r2 = await server.fetch(new Request(`${base}/api/jobs/${id}/files/hello.txt`, { headers: { Range: "bytes=-2" } }));
+    expect(r2.status).toBe(206);
+    expect(await r2.text()).toBe("lo");
   });
 
   test("GET /api/jobs/:id/files/* rejects path traversal across job boundaries", async () => {
